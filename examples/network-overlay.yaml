@@ -1,0 +1,15 @@
+# Default mode: VXLAN overlay, cluster-pool IPAM, eBPF kube-proxy replacement.
+apiVersion: network.storm.io/v1
+kind: Network
+metadata:
+  name: cluster
+spec:
+  cni: cilium
+  mode: overlay
+  clusterNetwork: ["10.244.0.0/16"]
+  serviceNetwork: ["10.96.0.0/12"]
+  cilium:
+    version: "1.19.6"
+    kubeProxyReplacement: true
+    k8sServiceHost: "192.168.8.98"
+    k8sServicePort: 6443
