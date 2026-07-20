@@ -1,0 +1,265 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: networks.network.storm.io
+spec:
+  group: network.storm.io
+  names:
+    categories: []
+    kind: Network
+    plural: networks
+    shortNames:
+    - net
+    singular: network
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.appliedMode
+      name: Mode
+      type: string
+    - jsonPath: .status.appliedVersion
+      name: Version
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Available")].status
+      name: Available
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Progressing")].status
+      name: Progressing
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Degraded")].status
+      name: Degraded
+      type: string
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: Auto-generated derived type for NetworkSpec via `CustomResource`
+        properties:
+          spec:
+            properties:
+              cilium:
+                description: Cilium knobs. Every field is an override of the mode's default.
+                nullable: true
+                properties:
+                  encryption:
+                    nullable: true
+                    properties:
+                      type:
+                        enum:
+                        - none
+                        - wireguard
+                        - ipsec
+                        nullable: true
+                        type: string
+                    type: object
+                  envoy:
+                    description: The standalone `cilium-envoy` DaemonSet. Off by default — Cilium embeds the proxy in the agent unless you split it out.
+                    nullable: true
+                    properties:
+                      enabled:
+                        nullable: true
+                        type: boolean
+                    type: object
+                  hostRouting:
+                    description: '`bpf` (≈ OVN shared gateway) or `legacy` (≈ local gateway).'
+                    enum:
+                    - bpf
+                    - legacy
+                    nullable: true
+                    type: string
+                  ipam:
+                    nullable: true
+                    properties:
+                      clusterPoolIPv4MaskSize:
+                        description: Per-node pod CIDR mask carved out of `clusterNetwork`.
+                        format: uint8
+                        minimum: 0.0
+                        nullable: true
+                        type: integer
+                      mode:
+                        enum:
+                        - cluster-pool
+                        - kubernetes
+                        nullable: true
+                        type: string
+                    type: object
+                  k8sServiceHost:
+                    description: The apiserver the agent dials before Services exist. Required — there is no in-cluster Service to fall back on while the CNI is coming up.
+                    nullable: true
+                    type: string
+                  k8sServicePort:
+                    format: uint16
+                    minimum: 0.0
+                    nullable: true
+                    type: integer
+                  kubeProxyReplacement:
+                    description: eBPF ClusterIP/NodePort/LoadBalancer/HostPort in place of kube-proxy.
+                    nullable: true
+                    type: boolean
+                  loadBalancer:
+                    nullable: true
+                    properties:
+                      announce:
+                        description: How allocated VIPs reach the network.
+                        enum:
+                        - none
+                        - l2
+                        - bgp
+                        nullable: true
+                        type: string
+                      bgp:
+                        nullable: true
+                        properties:
+                          localASN:
+                            format: int64
+                            nullable: true
+                            type: integer
+                          peers:
+                            default: []
+                            items:
+                              properties:
+                                address:
+                                  type: string
+                                asn:
+                                  format: int64
+                                  type: integer
+                              required:
+                              - address
+                              - asn
+                              type: object
+                            type: array
+                        type: object
+                      ipam:
+                        description: 'Enable LB-IPAM: allocate VIPs for `type: LoadBalancer` Services.'
+                        nullable: true
+                        type: boolean
+                      pools:
+                        description: CIDRs LB-IPAM allocates from.
+                        items:
+                          type: string
+                        nullable: true
+                        type: array
+                    type: object
+                  mtu:
+                    description: MTU; 0 (the default) means auto-detect from the node, as CNO does.
+                    format: int32
+                    nullable: true
+                    type: integer
+                  registry:
+                    description: Image registry/repository prefix, for mirrored or air-gapped installs. Default `quay.io/cilium`.
+                    nullable: true
+                    type: string
+                  routing:
+                    nullable: true
+                    properties:
+                      mode:
+                        enum:
+                        - tunnel
+                        - native
+                        nullable: true
+                        type: string
+                    type: object
+                  version:
+                    description: Image tag. Bumping it triggers a rolling upgrade.
+                    nullable: true
+                    type: string
+                type: object
+              clusterNetwork:
+                default: []
+                description: 'Pod CIDR(s) (OpenShift: `networking.clusterNetwork`). Immutable.'
+                items:
+                  type: string
+                type: array
+              cni:
+                default: cilium
+                description: The CNI to install. Cilium is the only supported value.
+                enum:
+                - cilium
+                type: string
+              mode:
+                default: overlay
+                description: Named install-time profile. Sets defaults for every `cilium` field below; anything set explicitly wins.
+                enum:
+                - overlay
+                - native
+                - bgp
+                - encrypted
+                - bare-metal
+                type: string
+              serviceNetwork:
+                default: []
+                description: 'Service CIDR(s) (OpenShift: `networking.serviceNetwork`). Immutable.'
+                items:
+                  type: string
+                type: array
+            type: object
+          status:
+            description: Cluster-operator-style status. Written only by the operator.
+            nullable: true
+            properties:
+              appliedClusterNetwork:
+                items:
+                  type: string
+                type: array
+              appliedDatapath:
+                description: Datapath family (`tunnel`/`native`) of the installed mode.
+                nullable: true
+                type: string
+              appliedIpam:
+                nullable: true
+                type: string
+              appliedMode:
+                description: The mode that is actually installed. Set on the first successful apply and thereafter the baseline for immutability checks.
+                nullable: true
+                type: string
+              appliedServiceNetwork:
+                items:
+                  type: string
+                type: array
+              appliedVersion:
+                nullable: true
+                type: string
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: lastTransitionTime is the last time the condition transitioned from one status to another. This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: message is a human readable message indicating details about the transition. This may be an empty string.
+                      type: string
+                    observedGeneration:
+                      description: observedGeneration represents the .metadata.generation that the condition was set based upon. For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date with respect to the current state of the instance.
+                      format: int64
+                      type: integer
+                    reason:
+                      description: reason contains a programmatic identifier indicating the reason for the condition's last transition. Producers of specific condition types may define expected values and meanings for this field, and whether the values are considered a guaranteed API. The value should be a CamelCase string. This field may not be empty.
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              observedGeneration:
+                format: int64
+                nullable: true
+                type: integer
+            type: object
+        required:
+        - spec
+        title: Network
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

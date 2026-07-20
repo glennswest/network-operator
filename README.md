@@ -209,19 +209,65 @@ running.
 
 ## Status
 
-Design/scaffold. Phased roadmap:
+**P0–P2 implemented.** The operator installs, upgrades, drift-heals and reports
+on Cilium for all five modes.
 
-- **P0** — `Network` CRD + reconcile loop: render + server-side apply the Cilium
-  objects from the CR; owner-refs; basic `Available`/`Progressing` status.
-- **P1** — drift reconciliation (watch owned objects, self-heal); `Degraded`
+- **P0** ✅ — `Network` CRD + reconcile loop: render + server-side apply the
+  Cilium objects from the CR; owner-refs; `Available`/`Progressing` status.
+- **P1** ✅ — drift reconciliation (watch owned objects, self-heal); `Degraded`
   from pod/rollout health; declarative version upgrade (rolling).
-- **P2** — LB‑IPAM / BGP config passthrough; IPAM & routing mode changes handled
-  safely (drain/roll); `Network.config`-style read-only cluster view.
-- **P3** — webhook validation of the CR; metrics; must-gather hooks.
+- **P2** ✅ — LB‑IPAM / BGP / L2 config passthrough; immutable fields rejected
+  against `status.applied*` rather than half-applied; objects removed when a
+  feature is turned off.
+- **P3** — webhook validation of the CR; metrics; must-gather hooks. *Not yet.*
+
+### Validation (2026-07-20)
+
+- Builds clean on x86_64 Linux (kube 0.98 / k8s-openapi `v1_32`); **75 tests
+  pass** (70 unit + 5 render/golden) — no cluster needed.
+- The target it manages is **live and healthy on the rustkube rig**: on
+  **rustkube v0.7.29 + fastetcd v1.0.4 + rustkube-node v0.2.0**, Cilium in
+  `overlay` mode came fully up — agent `cilium status: OK`, eBPF datapath loaded
+  (BPF programs on `eth0`/`cilium_host`/`cilium_net`, endpoint BPF reloaded),
+  `CiliumNode` created, all pods `Running` at attempt 0. So the operator's
+  rendered `overlay` install matches a known-good Cilium bring-up on the stack.
+
+Deliberately rejected rather than half-built, so the operator never installs
+something that cannot work — both fail validation with an explicit message:
+
+- `encryption.type: ipsec` — needs a pre-shared keyfile Secret we do not manage.
+- `envoy.enabled: true` — the standalone `cilium-envoy` DaemonSet needs a
+  generated bootstrap config we do not render. The L7 proxy stays embedded in
+  the agent, which is Cilium's own default.
 
 ## Build
 
 ```
 cargo build --release
-cargo test
+cargo test          # unit + golden tests; no cluster needed
+make clippy
 ```
+
+### Try it without a cluster
+
+The render is pure, so you can see exactly what a CR would install:
+
+```
+make dry-run FILE=examples/network-bgp.yaml
+```
+
+Every mode's full manifest set is checked in under `tests/golden/`, so a change
+to what gets installed shows up as a reviewable diff. After an intended change,
+`make golden` re-records them.
+
+### Deploy
+
+```
+kubectl apply -f deploy/crds/          # the Network CRD (generated: make crds)
+kubectl apply -f deploy/operator.yaml  # the operator itself
+kubectl apply -f examples/network-overlay.yaml
+kubectl get network cluster            # Mode / Version / Available / Progressing / Degraded
+```
+
+The operator is host-networked and control-plane-scheduled so it can start on a
+node that has no CNI yet — see "Bootstrap ordering" above.

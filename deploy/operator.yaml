@@ -1,0 +1,87 @@
+# network-operator itself. Apply after deploy/crds/.
+#
+# Bootstrap ordering: this runs as a cluster workload, but it is the thing that
+# installs the CNI, so it must not need pod networking to start. Hence
+# hostNetwork + a control-plane node selector + tolerations — it comes up on a
+# NotReady, un-CNI'd control-plane node and then brings Cilium up underneath it.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: network-operator
+  namespace: kube-system
+---
+# Kubernetes forbids granting permissions you do not hold yourself (RBAC
+# escalation prevention). This operator creates the cilium and cilium-operator
+# ClusterRoles, so it must hold at least their union — which, given the operator
+# rules include cilium.io/* and CRD creation, is close to everything already.
+# Broad and honest beats a narrow list that silently fails to bind. The same is
+# true of OpenShift's CNO.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: network-operator
+rules:
+- apiGroups: ["*"]
+  resources: ["*"]
+  verbs: ["*"]
+- nonResourceURLs: ["*"]
+  verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: network-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: network-operator
+subjects:
+- kind: ServiceAccount
+  name: network-operator
+  namespace: kube-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: network-operator
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: network-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: network-operator
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: network-operator
+    spec:
+      serviceAccountName: network-operator
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      priorityClassName: system-cluster-critical
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+      - operator: Exists
+      containers:
+      - name: network-operator
+        image: ghcr.io/glennswest/network-operator:latest
+        imagePullPolicy: IfNotPresent
+        args: ["run"]
+        env:
+        - name: RUST_LOG
+          value: info
+        resources:
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
