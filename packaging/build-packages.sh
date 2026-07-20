@@ -91,6 +91,18 @@ dpkg-deb --build --root-owner-group "$PKG" >/dev/null
 cp "$STAGE"/*.deb "$DIST/"
 rm -rf "$STAGE"
 
+# --- OCI archive ------------------------------------------------------------
+# A registry-free way to get the image onto a build host or an air-gapped
+# cluster: `gunzip -c ... | podman load`. Skipped if the image is not built.
+IMAGE="ghcr.io/glennswest/network-operator:$VERSION"
+if command -v podman >/dev/null && podman image exists "$IMAGE" 2>/dev/null; then
+    echo "==> oci archive"
+    podman save --format oci-archive -o "$DIST/network-operator-$VERSION-oci.tar" "$IMAGE"
+    gzip -f "$DIST/network-operator-$VERSION-oci.tar"
+else
+    echo "==> oci archive skipped ($IMAGE not built locally)"
+fi
+
 echo
 echo "==> artifacts"
 ls -la "$DIST"

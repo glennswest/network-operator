@@ -287,33 +287,31 @@ to what gets installed shows up as a reviewable diff. After an intended change,
 ### Deploy
 
 ```
-make pull-secret                       # ghcr credentials — see below
 kubectl apply -f deploy/crds/          # the Network CRD (generated: make crds)
 kubectl apply -f deploy/operator.yaml  # the operator itself
 kubectl apply -f examples/network-overlay.yaml
 kubectl get network cluster            # Mode / Version / Available / Progressing / Degraded
 ```
 
-#### Pulling the image
+#### The image
 
-The container image is published to `ghcr.io/glennswest/network-operator`. The
-package is currently **private**, so the pull needs credentials:
+`ghcr.io/glennswest/network-operator` is public — it pulls with no credentials:
 
 ```
-kubectl -n kube-system create secret docker-registry ghcr \
-  --docker-server=ghcr.io \
-  --docker-username=<user> \
-  --docker-password=<token with read:packages>
+podman pull ghcr.io/glennswest/network-operator:0.2.2
 ```
 
-`make pull-secret` does this using `gh auth token`. `deploy/operator.yaml`
-already references the Secret.
+Every release also carries a loadable OCI archive, for build-time preloads and
+air-gapped installs that would rather not reach a registry at all:
 
-Making the package **public** is the simpler end state — one toggle on the
-package settings page — after which no Secret is needed and a build-time
-preload works with no credentials at all. The `imagePullSecrets` reference is
-harmless once that happens: a missing pull Secret produces a warning event, not
-a failure, and the anonymous pull succeeds.
+```
+curl -L https://github.com/glennswest/network-operator/releases/download/v0.2.2/network-operator-0.2.2-oci.tar.gz \
+  | gunzip | podman load
+```
+
+If you mirror the image into a private registry, `make pull-secret` creates the
+pull Secret and `deploy/operator.yaml` needs an `imagePullSecrets` reference
+added.
 
 The operator is host-networked and control-plane-scheduled so it can start on a
 node that has no CNI yet — see "Bootstrap ordering" above.
