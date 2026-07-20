@@ -49,5 +49,10 @@ done
 %{_datadir}/%{name}/
 
 %changelog
+* Mon Jul 20 2026 Glenn West <glennswest@neuralcloudcomputing.com> - 0.2.0-1
+- Standalone cilium-envoy DaemonSet, bootstrap ConfigMap and metrics Service.
+- spec.cilium.clusterName / clusterID; self-registration of the Network CRD.
+- Tolerate an apiserver whose server-side apply does not upsert (rustkube#45).
+
 * Mon Jul 20 2026 Glenn West <glennswest@neuralcloudcomputing.com> - 0.1.0-1
 - Initial package: Network CR reconciled into a Cilium install (P0-P2).
