@@ -301,8 +301,9 @@ kubectl get network cluster            # Mode / Version / Available / Progressin
 podman pull ghcr.io/glennswest/network-operator:0.2.2
 ```
 
-Every release also carries a loadable OCI archive, for build-time preloads and
-air-gapped installs that would rather not reach a registry at all:
+Every release also carries a loadable OCI archive — built unconditionally
+alongside the rpm and deb — for build-time preloads and air-gapped installs
+that would rather not reach a registry at all:
 
 ```
 curl -L https://github.com/glennswest/network-operator/releases/download/v0.2.2/network-operator-0.2.2-oci.tar.gz \

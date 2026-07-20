@@ -4,7 +4,8 @@
 #
 #   packaging/build-packages.sh [version]
 #
-# Artifacts land in dist/.
+# Produces three artifacts in dist/: the .rpm, the .deb, and a gzipped OCI
+# archive of the container image. All three ship on every release.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -92,35 +93,35 @@ cp "$STAGE"/*.deb "$DIST/"
 rm -rf "$STAGE"
 
 # --- OCI archive ------------------------------------------------------------
-# A registry-free way to get the image onto a build host or an air-gapped
-# cluster: `gunzip -c ... | podman load`.
+# Always built, and a first-class release artifact alongside the rpm and deb:
+# a registry-free way to get the image onto a build host or an air-gapped
+# cluster (`gunzip -c ... | podman load`).
 #
-# Builds the image itself rather than assuming someone did it first — an
-# earlier version skipped when the image was absent, which quietly produced a
-# release with no archive in it.
+# There is deliberately no opt-out. An earlier version skipped this when the
+# image happened to be absent, which quietly produced a release with no archive
+# in it.
 #
 # --layers=false keeps the ~1.7GB intermediate Rust build layer out of the
 # image store. The final image is ~15MB; the layer is pure waste on a build
 # host, and it is what filled the disk when this was first written.
 IMAGE="ghcr.io/glennswest/network-operator:$VERSION"
-if [ "${SKIP_IMAGE:-}" = "1" ]; then
-    echo "==> oci archive skipped (SKIP_IMAGE=1)"
-elif ! command -v podman >/dev/null; then
-    echo "error: podman not found — install it, or set SKIP_IMAGE=1 to build packages only" >&2
+
+command -v podman >/dev/null || {
+    echo "error: podman not found — it is required to build the OCI archive" >&2
     exit 1
-else
-    echo "==> image $IMAGE"
-    podman build --layers=false -t "$IMAGE" .
+}
 
-    echo "==> oci archive"
-    podman save --format oci-archive -o "$DIST/network-operator-$VERSION-oci.tar" "$IMAGE"
-    gzip -f "$DIST/network-operator-$VERSION-oci.tar"
+echo "==> image $IMAGE"
+podman build --layers=false -t "$IMAGE" .
 
-    # The archive is the artifact people actually consume when a registry is
-    # unreachable; shipping a release without it should be loud, not silent.
-    test -s "$DIST/network-operator-$VERSION-oci.tar.gz" \
-        || { echo "error: OCI archive is missing or empty" >&2; exit 1; }
-fi
+echo "==> oci archive"
+podman save --format oci-archive -o "$DIST/network-operator-$VERSION-oci.tar" "$IMAGE"
+gzip -f "$DIST/network-operator-$VERSION-oci.tar"
+
+# The archive is the artifact people consume when a registry is unreachable;
+# a release missing it should fail the build, not ship quietly.
+test -s "$DIST/network-operator-$VERSION-oci.tar.gz" \
+    || { echo "error: OCI archive is missing or empty" >&2; exit 1; }
 
 echo
 echo "==> artifacts"
