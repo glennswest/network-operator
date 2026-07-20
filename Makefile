@@ -32,3 +32,7 @@ deploy:
 FILE ?= examples/network-overlay.yaml
 dry-run:
 	cargo run -q --bin network-operator -- dry-run $(FILE)
+
+# Build the .rpm and .deb. Linux only — run on the build host (dev.g8.lo).
+packages:
+	packaging/build-packages.sh
