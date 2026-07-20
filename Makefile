@@ -28,6 +28,18 @@ deploy:
 	kubectl apply -f deploy/crds/
 	kubectl apply -f deploy/operator.yaml
 
+# Credentials for the (currently private) ghcr package. Needs a token with
+# read:packages — `gh auth token` works if yours carries that scope.
+GHCR_USER ?= glennswest
+GHCR_TOKEN ?= $(shell gh auth token 2>/dev/null)
+pull-secret:
+	@test -n "$(GHCR_TOKEN)" || { echo "set GHCR_TOKEN (needs read:packages)"; exit 1; }
+	kubectl -n kube-system create secret docker-registry ghcr \
+	  --docker-server=ghcr.io \
+	  --docker-username=$(GHCR_USER) \
+	  --docker-password=$(GHCR_TOKEN) \
+	  --dry-run=client -o yaml | kubectl apply -f -
+
 # Render a Network manifest without a cluster: make dry-run FILE=examples/network-bgp.yaml
 FILE ?= examples/network-overlay.yaml
 dry-run:

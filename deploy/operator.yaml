@@ -68,16 +68,15 @@ spec:
         node-role.kubernetes.io/control-plane: ""
       tolerations:
       - operator: Exists
-      # Only needed while the ghcr package is private. If it is public (the
-      # simpler option, and what stormcos's build-time preload expects), delete
-      # this and no Secret is required:
+      # The ghcr package is private, so a pull needs credentials. Create the
+      # Secret with `make pull-secret` (or the kubectl command in README.md).
       #
-      #   kubectl -n kube-system create secret docker-registry ghcr \
-      #     --docker-server=ghcr.io --docker-username=<user> \
-      #     --docker-password=<token with read:packages>
-      #
-      # imagePullSecrets:
-      # - name: ghcr
+      # Safe to leave in place if the package is later made public: a missing
+      # imagePullSecret produces a warning event, not a failure, and the
+      # anonymous pull then succeeds. Making the package public is the simpler
+      # end state and the one stormcos's build-time preload wants.
+      imagePullSecrets:
+      - name: ghcr
       containers:
       - name: network-operator
         image: ghcr.io/glennswest/network-operator:latest

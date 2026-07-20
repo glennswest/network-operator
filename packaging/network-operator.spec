@@ -50,6 +50,10 @@ done
 %{_datadir}/%{name}/
 
 %changelog
+* Mon Jul 20 2026 Glenn West <glennswest@neuralcloudcomputing.com> - 0.2.3-1
+- Reference an image pull Secret in deploy/operator.yaml so the operator can be
+  deployed while the ghcr package is private; add `make pull-secret`.
+
 * Mon Jul 20 2026 Glenn West <glennswest@neuralcloudcomputing.com> - 0.2.2-1
 - Grant the agent read access to cilium-config via a namespaced Role, so the
   build-config init container no longer fails RBAC.

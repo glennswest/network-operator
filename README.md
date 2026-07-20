@@ -287,11 +287,33 @@ to what gets installed shows up as a reviewable diff. After an intended change,
 ### Deploy
 
 ```
+make pull-secret                       # ghcr credentials — see below
 kubectl apply -f deploy/crds/          # the Network CRD (generated: make crds)
 kubectl apply -f deploy/operator.yaml  # the operator itself
 kubectl apply -f examples/network-overlay.yaml
 kubectl get network cluster            # Mode / Version / Available / Progressing / Degraded
 ```
+
+#### Pulling the image
+
+The container image is published to `ghcr.io/glennswest/network-operator`. The
+package is currently **private**, so the pull needs credentials:
+
+```
+kubectl -n kube-system create secret docker-registry ghcr \
+  --docker-server=ghcr.io \
+  --docker-username=<user> \
+  --docker-password=<token with read:packages>
+```
+
+`make pull-secret` does this using `gh auth token`. `deploy/operator.yaml`
+already references the Secret.
+
+Making the package **public** is the simpler end state — one toggle on the
+package settings page — after which no Secret is needed and a build-time
+preload works with no credentials at all. The `imagePullSecrets` reference is
+harmless once that happens: a missing pull Secret produces a warning event, not
+a failure, and the anonymous pull succeeds.
 
 The operator is host-networked and control-plane-scheduled so it can start on a
 node that has no CNI yet — see "Bootstrap ordering" above.
