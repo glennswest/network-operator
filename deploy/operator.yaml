@@ -68,6 +68,16 @@ spec:
         node-role.kubernetes.io/control-plane: ""
       tolerations:
       - operator: Exists
+      # Only needed while the ghcr package is private. If it is public (the
+      # simpler option, and what stormcos's build-time preload expects), delete
+      # this and no Secret is required:
+      #
+      #   kubectl -n kube-system create secret docker-registry ghcr \
+      #     --docker-server=ghcr.io --docker-username=<user> \
+      #     --docker-password=<token with read:packages>
+      #
+      # imagePullSecrets:
+      # - name: ghcr
       containers:
       - name: network-operator
         image: ghcr.io/glennswest/network-operator:latest
