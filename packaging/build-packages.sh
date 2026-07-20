@@ -93,14 +93,33 @@ rm -rf "$STAGE"
 
 # --- OCI archive ------------------------------------------------------------
 # A registry-free way to get the image onto a build host or an air-gapped
-# cluster: `gunzip -c ... | podman load`. Skipped if the image is not built.
+# cluster: `gunzip -c ... | podman load`.
+#
+# Builds the image itself rather than assuming someone did it first — an
+# earlier version skipped when the image was absent, which quietly produced a
+# release with no archive in it.
+#
+# --layers=false keeps the ~1.7GB intermediate Rust build layer out of the
+# image store. The final image is ~15MB; the layer is pure waste on a build
+# host, and it is what filled the disk when this was first written.
 IMAGE="ghcr.io/glennswest/network-operator:$VERSION"
-if command -v podman >/dev/null && podman image exists "$IMAGE" 2>/dev/null; then
+if [ "${SKIP_IMAGE:-}" = "1" ]; then
+    echo "==> oci archive skipped (SKIP_IMAGE=1)"
+elif ! command -v podman >/dev/null; then
+    echo "error: podman not found — install it, or set SKIP_IMAGE=1 to build packages only" >&2
+    exit 1
+else
+    echo "==> image $IMAGE"
+    podman build --layers=false -t "$IMAGE" .
+
     echo "==> oci archive"
     podman save --format oci-archive -o "$DIST/network-operator-$VERSION-oci.tar" "$IMAGE"
     gzip -f "$DIST/network-operator-$VERSION-oci.tar"
-else
-    echo "==> oci archive skipped ($IMAGE not built locally)"
+
+    # The archive is the artifact people actually consume when a registry is
+    # unreachable; shipping a release without it should be loud, not silent.
+    test -s "$DIST/network-operator-$VERSION-oci.tar.gz" \
+        || { echo "error: OCI archive is missing or empty" >&2; exit 1; }
 fi
 
 echo
