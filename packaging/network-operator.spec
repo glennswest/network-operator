@@ -43,12 +43,20 @@ for f in examples/*.yaml; do
 done
 
 %files
+%license LICENSE
 %doc README.md
 %{_bindir}/network-operator
 %{_bindir}/network-operator-crdgen
 %{_datadir}/%{name}/
 
 %changelog
+* Mon Jul 20 2026 Glenn West <glennswest@neuralcloudcomputing.com> - 0.2.2-1
+- Grant the agent read access to cilium-config via a namespaced Role, so the
+  build-config init container no longer fails RBAC.
+- Close the remaining ClusterRole gaps against a known-good install, including
+  services/status for LB-IPAM.
+- Ship the Apache-2.0 LICENSE, which the packages already declared.
+
 * Mon Jul 20 2026 Glenn West <glennswest@neuralcloudcomputing.com> - 0.2.1-1
 - Fix agent init containers failing with EPERM: set pod-level seccomp and
   AppArmor unconfined, and give every container an explicit capability set.

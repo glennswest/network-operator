@@ -120,14 +120,31 @@ rules:
 - apiGroups:
   - cilium.io
   resources:
+  - ciliumbgppeeringpolicies
+  - ciliumegressgatewaypolicies
+  - ciliumlocalredirectpolicies
+  - ciliumnodeconfigs
+  verbs:
+  - list
+  - watch
+- apiGroups:
+  - cilium.io
+  resources:
   - ciliumnetworkpolicies/status
   - ciliumclusterwidenetworkpolicies/status
   - ciliumendpoints/status
   - ciliumnodes/status
   - ciliumbgpnodeconfigs/status
+  - ciliuml2announcementpolicies/status
   verbs:
   - patch
   - update
+- apiGroups:
+  - cilium.io
+  resources:
+  - ciliumnodes/status
+  verbs:
+  - get
 - apiGroups:
   - coordination.k8s.io
   resources:
@@ -193,6 +210,22 @@ rules:
   - create
   - patch
   - update
+- apiGroups:
+  - ''
+  resources:
+  - services/status
+  verbs:
+  - update
+  - patch
+- apiGroups:
+  - ''
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+  - patch
 - apiGroups:
   - discovery.k8s.io
   resources:
@@ -271,6 +304,43 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: cilium-operator
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: network-operator
+    app.kubernetes.io/part-of: cilium
+    network.storm.io/owner: cluster
+  name: cilium-config-agent
+  namespace: kube-system
+rules:
+- apiGroups:
+  - ''
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: network-operator
+    app.kubernetes.io/part-of: cilium
+    network.storm.io/owner: cluster
+  name: cilium-config-agent
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cilium-config-agent
+subjects:
+- kind: ServiceAccount
+  name: cilium
   namespace: kube-system
 ---
 apiVersion: v1

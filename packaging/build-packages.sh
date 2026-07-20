@@ -64,6 +64,7 @@ for f in examples/*.yaml; do
     install -Dpm0644 "$f" "$PKG/usr/share/network-operator/$f"
 done
 install -Dpm0644 README.md "$PKG/usr/share/doc/network-operator/README.md"
+install -Dpm0644 LICENSE "$PKG/usr/share/doc/network-operator/LICENSE"
 
 mkdir -p "$PKG/DEBIAN"
 cat > "$PKG/DEBIAN/control" <<EOF

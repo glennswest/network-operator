@@ -5,11 +5,21 @@
 //! installs the Cilium CRDs and garbage-collects identities and endpoints.
 
 use k8s_openapi::api::core::v1::ServiceAccount;
-use k8s_openapi::api::rbac::v1::{ClusterRole, ClusterRoleBinding, PolicyRule, RoleRef, Subject};
+use k8s_openapi::api::rbac::v1::{
+    ClusterRole, ClusterRoleBinding, PolicyRule, Role, RoleBinding, RoleRef, Subject,
+};
 
 use crate::modes::{EffectiveConfig, NAMESPACE};
 
 use super::{cluster_meta, meta, typed, Rendered, AGENT_SA, OPERATOR_SA};
+
+/// Namespaced Role letting the agent read `cilium-config`.
+///
+/// The agent's `build-config` init container reads the ConfigMap through the
+/// API, not from its mounted volume, so it needs an explicit grant. Upstream
+/// scopes this to a namespaced Role rather than widening the ClusterRole, and
+/// so do we — the agent has no business reading ConfigMaps cluster-wide.
+const CONFIG_AGENT_ROLE: &str = "cilium-config-agent";
 
 pub fn render(cfg: &EffectiveConfig) -> Vec<Rendered> {
     vec![
@@ -19,7 +29,33 @@ pub fn render(cfg: &EffectiveConfig) -> Vec<Rendered> {
         typed(cluster_role(cfg, OPERATOR_SA, operator_rules())),
         typed(binding(cfg, AGENT_SA)),
         typed(binding(cfg, OPERATOR_SA)),
+        typed(config_agent_role(cfg)),
+        typed(config_agent_role_binding(cfg)),
     ]
+}
+
+fn config_agent_role(cfg: &EffectiveConfig) -> Role {
+    Role {
+        metadata: meta(cfg, CONFIG_AGENT_ROLE, &[]),
+        rules: Some(vec![rule(&[""], &["configmaps"], &["get", "list", "watch"])]),
+    }
+}
+
+fn config_agent_role_binding(cfg: &EffectiveConfig) -> RoleBinding {
+    RoleBinding {
+        metadata: meta(cfg, CONFIG_AGENT_ROLE, &[]),
+        role_ref: RoleRef {
+            api_group: "rbac.authorization.k8s.io".to_string(),
+            kind: "Role".to_string(),
+            name: CONFIG_AGENT_ROLE.to_string(),
+        },
+        subjects: Some(vec![Subject {
+            kind: "ServiceAccount".to_string(),
+            name: AGENT_SA.to_string(),
+            namespace: Some(NAMESPACE.to_string()),
+            api_group: None,
+        }]),
+    }
 }
 
 fn service_account(cfg: &EffectiveConfig, name: &str) -> ServiceAccount {
@@ -99,6 +135,17 @@ fn agent_rules() -> Vec<PolicyRule> {
             ],
             &["get", "list", "watch", "create", "update", "patch", "delete"],
         ),
+        // Read-only policy/config CRs the agent watches but never writes.
+        rule(
+            &["cilium.io"],
+            &[
+                "ciliumbgppeeringpolicies",
+                "ciliumegressgatewaypolicies",
+                "ciliumlocalredirectpolicies",
+                "ciliumnodeconfigs",
+            ],
+            &["list", "watch"],
+        ),
         rule(
             &["cilium.io"],
             &[
@@ -107,9 +154,11 @@ fn agent_rules() -> Vec<PolicyRule> {
                 "ciliumendpoints/status",
                 "ciliumnodes/status",
                 "ciliumbgpnodeconfigs/status",
+                "ciliuml2announcementpolicies/status",
             ],
             &["patch", "update"],
         ),
+        rule(&["cilium.io"], &["ciliumnodes/status"], &["get"]),
         // Leases back the agent-side leader elections (L2 announcement leader,
         // among others).
         rule(
@@ -127,6 +176,9 @@ fn operator_rules() -> Vec<PolicyRule> {
         rule(&[""], &["nodes", "nodes/status"], &["patch", "update"]),
         rule(&[""], &["secrets"], &["get", "list", "watch", "create", "update", "delete"]),
         rule(&[""], &["events"], &["create", "patch", "update"]),
+        // Writes the LB-IPAM-assigned VIP back onto the Service.
+        rule(&[""], &["services/status"], &["update", "patch"]),
+        rule(&[""], &["configmaps"], &["get", "list", "watch", "patch"]),
         rule(&["discovery.k8s.io"], &["endpointslices"], &["get", "list", "watch"]),
         rule(
             &["networking.k8s.io"],
@@ -168,8 +220,51 @@ mod tests {
                 "ClusterRole/cilium-operator",
                 "ClusterRoleBinding/cilium",
                 "ClusterRoleBinding/cilium-operator",
+                "Role/kube-system/cilium-config-agent",
+                "RoleBinding/kube-system/cilium-config-agent",
             ]
         );
+    }
+
+    /// #6: `build-config` reads cilium-config through the API and exited 1 with
+    /// "not allowed to get configmaps". Granted via a namespaced Role, the way
+    /// upstream does it — the agent must not read ConfigMaps cluster-wide.
+    #[test]
+    fn agent_can_read_its_own_config_map_but_only_in_its_namespace() {
+        let role = config_agent_role(&cfg_for(Mode::Overlay));
+        let r = &role.rules.unwrap()[0];
+        assert_eq!(r.resources.as_ref().unwrap(), &["configmaps"]);
+        assert!(r.verbs.contains(&"get".to_string()));
+        assert_eq!(role.metadata.namespace.as_deref(), Some(NAMESPACE));
+
+        let rb = config_agent_role_binding(&cfg_for(Mode::Overlay));
+        assert_eq!(rb.role_ref.kind, "Role");
+        assert_eq!(rb.role_ref.name, CONFIG_AGENT_ROLE);
+        let s = &rb.subjects.unwrap()[0];
+        assert_eq!(s.name, AGENT_SA);
+        assert_eq!(s.namespace.as_deref(), Some(NAMESPACE));
+
+        // Cluster-wide ConfigMap access stays off the agent's ClusterRole.
+        assert!(!agent_rules().iter().any(|r| r
+            .resources
+            .as_ref()
+            .is_some_and(|rs| rs.contains(&"configmaps".to_string()))));
+    }
+
+    /// LB-IPAM allocates a VIP and writes it to Service.status; without this the
+    /// address is allocated and never surfaces on the Service.
+    #[test]
+    fn operator_can_write_service_status_and_read_config() {
+        let rules = operator_rules();
+        let has = |res: &str, verb: &str| {
+            rules.iter().any(|r| {
+                r.resources.as_ref().is_some_and(|rs| rs.contains(&res.to_string()))
+                    && r.verbs.contains(&verb.to_string())
+            })
+        };
+        assert!(has("services/status", "update"), "LB-IPAM cannot publish the VIP");
+        assert!(has("services/status", "patch"));
+        assert!(has("configmaps", "get"));
     }
 
     #[test]
