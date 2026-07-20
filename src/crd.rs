@@ -153,6 +153,14 @@ pub struct CiliumSpec {
     /// the proxy in the agent unless you split it out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub envoy: Option<EnvoySpec>,
+
+    /// Cluster identity. Feeds identity allocation and, later, ClusterMesh.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cluster_name: Option<String>,
+
+    /// Cluster ID, unique across a ClusterMesh. 0 is "no mesh".
+    #[serde(default, rename = "clusterID", skip_serializing_if = "Option::is_none")]
+    pub cluster_id: Option<u32>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema, PartialEq)]
@@ -299,6 +307,15 @@ pub struct BgpPeer {
 pub struct EnvoySpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
+
+    /// Full image reference for `cilium-envoy`.
+    ///
+    /// Envoy is versioned independently of Cilium — the tag looks like
+    /// `v1.36.9-1782267392-<sha>`, which cannot be derived from
+    /// `spec.cilium.version`. The default is pinned to the Cilium 1.19 series;
+    /// running a different Cilium minor means setting this explicitly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
 }
 
 /// Cluster-operator-style status. Written only by the operator.

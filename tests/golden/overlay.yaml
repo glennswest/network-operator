@@ -312,6 +312,9 @@ data:
   enable-policy: default
   enable-session-affinity: 'true'
   enable-wireguard: 'false'
+  envoy-access-log-buffer-size: '4096'
+  envoy-base-id: '0'
+  envoy-keep-cap-netbindservice: 'false'
   external-envoy-proxy: 'false'
   identity-allocation-mode: crd
   ipam: cluster-pool

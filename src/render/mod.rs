@@ -18,6 +18,7 @@ use crate::modes::{EffectiveConfig, NAMESPACE};
 
 mod agent;
 mod config;
+mod envoy;
 mod lb;
 mod operator;
 mod rbac;
@@ -65,6 +66,9 @@ pub fn render(cfg: &EffectiveConfig) -> Vec<Rendered> {
     out.push(config::render(cfg));
     out.push(agent::render(cfg));
     out.push(operator::render(cfg));
+    // Envoy after the agent: it blocks on the agent's xDS socket, so there is
+    // no point racing it up first.
+    out.extend(envoy::render(cfg));
     // Backed by CRDs that cilium-operator installs, so these are applied last
     // and tolerated as missing until it has.
     out.extend(lb::render(cfg));

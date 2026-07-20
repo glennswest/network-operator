@@ -47,6 +47,12 @@ fn manifest(mode: &str) -> String {
         }
         _ => "",
     };
+    let envoy = if mode == "overlay-envoy" {
+        "\n    envoy:\n      enabled: true"
+    } else {
+        ""
+    };
+    let mode = if mode == "overlay-envoy" { "overlay" } else { mode };
 
     format!(
         r#"apiVersion: network.storm.io/v1
@@ -62,7 +68,7 @@ spec:
     version: "1.19.6"
     kubeProxyReplacement: true
     k8sServiceHost: "192.168.8.98"
-    k8sServicePort: 6443{load_balancer}
+    k8sServicePort: 6443{load_balancer}{envoy}
 "#
     )
 }
@@ -86,7 +92,7 @@ fn every_mode_matches_its_golden_manifest() {
     let update = std::env::var_os("UPDATE_GOLDEN").is_some();
     let mut stale = Vec::new();
 
-    for (name, _) in MODES {
+    for name in MODES.iter().map(|(n, _)| *n).chain(["overlay-envoy"]) {
         let net: Network = serde_yaml::from_str(&manifest(name)).unwrap();
         let rendered = render_to_yaml(&net);
         let path = golden_path(name);

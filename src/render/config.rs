@@ -14,6 +14,10 @@ use super::{meta, typed, Rendered, AGENT_HEALTH_PORT, CONFIG_MAP};
 /// `genevePort`.
 const TUNNEL_PORT: &str = "8472";
 
+/// Dual-stack is not supported yet. Kept as a named constant so the keys that
+/// depend on it move together the day it is.
+const IPV6_ENABLED: bool = false;
+
 pub fn render(cfg: &EffectiveConfig) -> Rendered {
     typed(ConfigMap {
         metadata: meta(cfg, CONFIG_MAP, &[]),
@@ -33,8 +37,8 @@ pub fn data(cfg: &EffectiveConfig) -> BTreeMap<String, String> {
     // Identity/cluster identity. CRD-backed identities are the only mode that
     // works without an external kvstore, which we deliberately do not run.
     set("identity-allocation-mode", "crd");
-    set("cluster-name", "default");
-    set("cluster-id", "0");
+    set("cluster-name", &cfg.cluster_name);
+    set("cluster-id", &cfg.cluster_id.to_string());
 
     // --- datapath ---
     set("routing-mode", cfg.routing.as_str());
@@ -51,9 +55,12 @@ pub fn data(cfg: &EffectiveConfig) -> BTreeMap<String, String> {
         }
     }
     set("enable-ipv4", "true");
-    set("enable-ipv6", "false");
+    set("enable-ipv6", bool_str(IPV6_ENABLED));
     set("enable-ipv4-masquerade", "true");
-    set("enable-ipv6-masquerade", "false");
+    // Follows the IPv6 setting rather than being pinned independently. IPv6 is
+    // not supported yet, so this is always false today — but the shape is right
+    // for when it is.
+    set("enable-ipv6-masquerade", bool_str(IPV6_ENABLED));
     set("enable-bpf-masquerade", "true");
     // bpf host routing is the fast path; `legacy` pushes packets back up through
     // the host stack (the OVN local-gateway analogue).
@@ -115,9 +122,12 @@ pub fn data(cfg: &EffectiveConfig) -> BTreeMap<String, String> {
     set("enable-policy", "default");
     set("enable-k8s-networkpolicy", "true");
     set("enable-l7-proxy", "true");
-    // The standalone cilium-envoy DaemonSet is not rendered yet (rejected in
-    // validation), so the proxy always stays embedded in the agent.
-    set("external-envoy-proxy", "false");
+    // When false the proxy stays embedded in the agent; when true the
+    // standalone cilium-envoy DaemonSet carries it.
+    set("external-envoy-proxy", bool_str(cfg.envoy));
+    set("envoy-base-id", "0");
+    set("envoy-access-log-buffer-size", "4096");
+    set("envoy-keep-cap-netbindservice", "false");
 
     // --- CNI plumbing ---
     set("cni-exclusive", "true");

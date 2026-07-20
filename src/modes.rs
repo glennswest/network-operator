@@ -21,6 +21,15 @@ use crate::crd::{
 pub const DEFAULT_CILIUM_VERSION: &str = "1.19.6";
 /// Image registry prefix used when the CR does not override it.
 pub const DEFAULT_REGISTRY: &str = "quay.io/cilium";
+/// `cilium-envoy` tag paired with the Cilium 1.19 series.
+///
+/// Envoy is versioned independently of Cilium and the tag encodes an Envoy
+/// version, a build number and a commit sha — none of it derivable from
+/// `spec.cilium.version`. Taken from a known-good 1.19.6 install. Bump this
+/// alongside [`DEFAULT_CILIUM_VERSION`], or override per-cluster with
+/// `spec.cilium.envoy.image`.
+pub const DEFAULT_ENVOY_TAG: &str =
+    "v1.36.9-1782267392-edeb3f2af56c37c407efa1f63f0b32f595399bbc";
 /// Namespace every rendered object lands in.
 pub const NAMESPACE: &str = "kube-system";
 
@@ -61,6 +70,10 @@ pub struct EffectiveConfig {
     pub bgp_peers: Vec<(String, i64)>,
 
     pub envoy: bool,
+    pub envoy_image: String,
+
+    pub cluster_name: String,
+    pub cluster_id: u32,
 }
 
 impl EffectiveConfig {
@@ -81,10 +94,6 @@ impl EffectiveConfig {
         // The generic operator — no cloud IPAM, which is what cluster-pool and
         // kubernetes IPAM both use.
         format!("{}/operator-generic:{}", self.registry, self.image_tag())
-    }
-
-    pub fn envoy_image(&self) -> String {
-        format!("{}/cilium-envoy:{}", self.registry, self.image_tag())
     }
 
     /// Whether any BGP object should be rendered.
@@ -205,6 +214,20 @@ pub fn resolve(spec: &NetworkSpec) -> Result<EffectiveConfig, ValidationError> {
             .and_then(|c| c.envoy.as_ref())
             .and_then(|e| e.enabled)
             .unwrap_or(false),
+        envoy_image: c
+            .and_then(|c| c.envoy.as_ref())
+            .and_then(|e| e.image.clone())
+            .unwrap_or_else(|| {
+                let registry = c
+                    .and_then(|c| c.registry.clone())
+                    .unwrap_or_else(|| DEFAULT_REGISTRY.to_string());
+                format!("{registry}/cilium-envoy:{DEFAULT_ENVOY_TAG}")
+            }),
+
+        cluster_name: c
+            .and_then(|c| c.cluster_name.clone())
+            .unwrap_or_else(|| "default".to_string()),
+        cluster_id: c.and_then(|c| c.cluster_id).unwrap_or(0),
     };
 
     validate(&cfg)?;
@@ -398,12 +421,18 @@ fn validate(cfg: &EffectiveConfig) -> Result<(), ValidationError> {
         ));
     }
 
-    // The standalone envoy DaemonSet needs a generated bootstrap config we do
-    // not render yet. Rejecting is honest; the embedded proxy still serves L7.
-    if cfg.envoy {
+    // Cluster identity: ClusterMesh requires a distinct id per cluster, and
+    // Cilium caps it at 255.
+    if cfg.cluster_name.trim().is_empty() {
         return Err(ValidationError::new(
-            "spec.cilium.envoy.enabled",
-            "the standalone cilium-envoy DaemonSet is not implemented yet — the L7 proxy stays embedded in the agent",
+            "spec.cilium.clusterName",
+            "must not be empty",
+        ));
+    }
+    if cfg.cluster_id > 255 {
+        return Err(ValidationError::new(
+            "spec.cilium.clusterID",
+            "must be between 0 and 255",
         ));
     }
 
@@ -605,9 +634,61 @@ mod tests {
         s.cilium.as_mut().unwrap().encryption =
             Some(EncryptionSpec { kind: Some(EncryptionType::Ipsec) });
         assert_eq!(err_field(&s), "spec.cilium.encryption.type");
+    }
+
+    #[test]
+    fn envoy_is_off_by_default_and_versioned_independently_of_cilium() {
+        let cfg = resolve(&spec(Mode::Overlay)).unwrap();
+        assert!(!cfg.envoy);
 
         let mut s = spec(Mode::Overlay);
-        s.cilium.as_mut().unwrap().envoy = Some(crate::crd::EnvoySpec { enabled: Some(true) });
-        assert_eq!(err_field(&s), "spec.cilium.envoy.enabled");
+        s.cilium.as_mut().unwrap().envoy = Some(crate::crd::EnvoySpec {
+            enabled: Some(true),
+            image: None,
+        });
+        let cfg = resolve(&s).unwrap();
+        assert!(cfg.envoy);
+        // The envoy tag is its own thing — deriving it from spec.cilium.version
+        // would produce a tag that does not exist.
+        assert_eq!(
+            cfg.envoy_image,
+            format!("{DEFAULT_REGISTRY}/cilium-envoy:{DEFAULT_ENVOY_TAG}")
+        );
+        assert!(!cfg.envoy_image.contains(&cfg.version));
+
+        // A mirrored registry carries the envoy image too.
+        let mut s2 = s.clone();
+        s2.cilium.as_mut().unwrap().registry = Some("mirror.local/cilium".into());
+        assert!(resolve(&s2).unwrap().envoy_image.starts_with("mirror.local/cilium/cilium-envoy:"));
+
+        // ...and a full override wins outright.
+        s.cilium.as_mut().unwrap().envoy = Some(crate::crd::EnvoySpec {
+            enabled: Some(true),
+            image: Some("registry.internal/envoy:pinned".into()),
+        });
+        assert_eq!(resolve(&s).unwrap().envoy_image, "registry.internal/envoy:pinned");
+    }
+
+    #[test]
+    fn cluster_identity_defaults_and_is_bounded() {
+        let cfg = resolve(&spec(Mode::Overlay)).unwrap();
+        assert_eq!(cfg.cluster_name, "default");
+        assert_eq!(cfg.cluster_id, 0);
+
+        let mut s = spec(Mode::Overlay);
+        s.cilium.as_mut().unwrap().cluster_name = Some("g8".into());
+        s.cilium.as_mut().unwrap().cluster_id = Some(7);
+        let cfg = resolve(&s).unwrap();
+        assert_eq!(cfg.cluster_name, "g8");
+        assert_eq!(cfg.cluster_id, 7);
+
+        // ClusterMesh caps the id at 255.
+        let mut s = spec(Mode::Overlay);
+        s.cilium.as_mut().unwrap().cluster_id = Some(256);
+        assert_eq!(err_field(&s), "spec.cilium.clusterID");
+
+        let mut s = spec(Mode::Overlay);
+        s.cilium.as_mut().unwrap().cluster_name = Some("  ".into());
+        assert_eq!(err_field(&s), "spec.cilium.clusterName");
     }
 }

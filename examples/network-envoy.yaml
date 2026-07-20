@@ -1,0 +1,24 @@
+# L7 mode: overlay datapath with the proxy split out of the agent into a
+# standalone cilium-envoy DaemonSet. Decouples proxy restarts from agent
+# restarts, which matters once L7 policy or Ingress carries real traffic.
+#
+# Note `envoy.image`: Envoy is versioned independently of Cilium, so the tag
+# cannot be derived from `cilium.version`. The operator pins a default paired
+# with the Cilium 1.19 series; set it explicitly on any other minor.
+apiVersion: network.storm.io/v1
+kind: Network
+metadata:
+  name: cluster
+spec:
+  cni: cilium
+  mode: overlay
+  clusterNetwork: ["10.244.0.0/16"]
+  serviceNetwork: ["10.96.0.0/12"]
+  cilium:
+    version: "1.19.6"
+    clusterName: "default"
+    kubeProxyReplacement: true
+    k8sServiceHost: "192.168.8.98"
+    k8sServicePort: 6443
+    envoy:
+      enabled: true

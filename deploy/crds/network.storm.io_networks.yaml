@@ -40,6 +40,16 @@ spec:
                 description: Cilium knobs. Every field is an override of the mode's default.
                 nullable: true
                 properties:
+                  clusterID:
+                    description: Cluster ID, unique across a ClusterMesh. 0 is "no mesh".
+                    format: uint32
+                    minimum: 0.0
+                    nullable: true
+                    type: integer
+                  clusterName:
+                    description: Cluster identity. Feeds identity allocation and, later, ClusterMesh.
+                    nullable: true
+                    type: string
                   encryption:
                     nullable: true
                     properties:
@@ -58,6 +68,13 @@ spec:
                       enabled:
                         nullable: true
                         type: boolean
+                      image:
+                        description: |-
+                          Full image reference for `cilium-envoy`.
+
+                          Envoy is versioned independently of Cilium — the tag looks like `v1.36.9-1782267392-<sha>`, which cannot be derived from `spec.cilium.version`. The default is pinned to the Cilium 1.19 series; running a different Cilium minor means setting this explicitly.
+                        nullable: true
+                        type: string
                     type: object
                   hostRouting:
                     description: '`bpf` (≈ OVN shared gateway) or `legacy` (≈ local gateway).'

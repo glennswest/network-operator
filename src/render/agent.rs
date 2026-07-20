@@ -80,7 +80,7 @@ fn pod_spec(cfg: &EffectiveConfig) -> PodSpec {
         tolerations: Some(tolerate_all()),
         init_containers: Some(init_containers(cfg)),
         containers: vec![agent_container(cfg)],
-        volumes: Some(volumes()),
+        volumes: Some(volumes(cfg)),
         ..Default::default()
     }
 }
@@ -126,7 +126,12 @@ fn agent_container(cfg: &EffectiveConfig) -> Container {
             mount("host-proc-sys-net", "/host/proc/sys/net"),
             mount("host-proc-sys-kernel", "/host/proc/sys/kernel"),
             mount("tmp", "/tmp"),
-        ]),
+        ]
+        .into_iter()
+        // A standalone Envoy reaches xDS through this directory, so the agent
+        // has to serve it from the same host path Envoy mounts.
+        .chain(cfg.envoy.then(super::envoy::agent_socket_mount))
+        .collect()),
         ..Default::default()
     }
 }
@@ -251,8 +256,8 @@ fn init_containers(cfg: &EffectiveConfig) -> Vec<Container> {
     ]
 }
 
-fn volumes() -> Vec<Volume> {
-    vec![
+fn volumes(cfg: &EffectiveConfig) -> Vec<Volume> {
+    let mut v = vec![
         empty_dir("tmp"),
         host_path("cilium-run", "/var/run/cilium", "DirectoryOrCreate"),
         host_path("bpf-maps", "/sys/fs/bpf", "DirectoryOrCreate"),
@@ -265,7 +270,11 @@ fn volumes() -> Vec<Volume> {
         host_path("host-proc-sys-net", "/proc/sys/net", "Directory"),
         host_path("host-proc-sys-kernel", "/proc/sys/kernel", "Directory"),
         config_map_volume("cilium-config-path", CONFIG_MAP),
-    ]
+    ];
+    if cfg.envoy {
+        v.push(super::envoy::agent_socket_volume());
+    }
+    v
 }
 
 #[cfg(test)]

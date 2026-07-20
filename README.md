@@ -239,12 +239,30 @@ on Cilium for all five modes.
   the install) is unaffected.
 
 Deliberately rejected rather than half-built, so the operator never installs
-something that cannot work — both fail validation with an explicit message:
+something that cannot work — it fails validation with an explicit message:
 
 - `encryption.type: ipsec` — needs a pre-shared keyfile Secret we do not manage.
-- `envoy.enabled: true` — the standalone `cilium-envoy` DaemonSet needs a
-  generated bootstrap config we do not render. The L7 proxy stays embedded in
-  the agent, which is Cilium's own default.
+  Use `wireguard`.
+
+### The L7 proxy
+
+`spec.cilium.envoy.enabled: true` splits the proxy out of the agent into a
+standalone `cilium-envoy` DaemonSet (plus its bootstrap ConfigMap and a headless
+metrics Service), and adds the shared socket directory to the agent so it can
+serve xDS to it. Off by default — Cilium embeds the proxy unless you split it
+out, and the embedded one serves L7 policy fine. Splitting it out decouples
+proxy restarts from agent restarts, which matters once L7 policy or Ingress
+carries real traffic. See `examples/network-envoy.yaml`.
+
+The bootstrap config is embedded **verbatim from a known-good running install**
+rather than generated — it is cluster-agnostic, so it needs no templating, and
+inventing an Envoy xDS bootstrap would be a far worse idea than copying one that
+works.
+
+Note that Envoy is versioned independently of Cilium: the tag looks like
+`v1.36.9-<build>-<sha>` and cannot be derived from `spec.cilium.version`. The
+operator pins a default paired with the Cilium 1.19 series; on any other minor,
+set `spec.cilium.envoy.image` explicitly.
 
 ## Build
 

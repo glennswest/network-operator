@@ -46,13 +46,65 @@ pub async fn apply_one(client: &Client, r: &Rendered) -> Result<(), ApplyError> 
             debug!(object = %r.id(), "applied");
             Ok(())
         }
-        Err(KubeError::Api(e)) if is_kind_missing(&e) => Err(ApplyError::KindNotFound { id: r.id() }),
-        // rustkube builds without PATCH support: fall back to create/replace.
-        Err(KubeError::Api(e)) if e.code == 405 || e.code == 501 => {
-            warn!(object = %r.id(), "apiserver rejected PATCH; falling back to create/replace");
-            replace(&api, r).await
-        }
+        Err(KubeError::Api(e)) => match classify(&e) {
+            Disposition::DeferKind => Err(ApplyError::KindNotFound { id: r.id() }),
+
+            Disposition::CreateMissing => {
+                warn!(
+                    object = %r.id(),
+                    "apply did not create the missing object (server-side apply must upsert); creating it directly"
+                );
+                match replace(&api, r).await {
+                    // Still absent after an explicit create: it was the kind
+                    // that was missing all along, not the object. Hand it back
+                    // to the deferral path so Cilium's own CRs still wait for
+                    // cilium-operator rather than failing the reconcile.
+                    Err(ApplyError::Api { source: KubeError::Api(e), .. }) if e.code == 404 => {
+                        Err(ApplyError::KindNotFound { id: r.id() })
+                    }
+                    other => other,
+                }
+            }
+
+            Disposition::NoPatchSupport => {
+                warn!(object = %r.id(), "apiserver rejected PATCH; falling back to create/replace");
+                replace(&api, r).await
+            }
+
+            Disposition::Fail => Err(ApplyError::Api { id: r.id(), source: KubeError::Api(e) }),
+        },
         Err(source) => Err(ApplyError::Api { id: r.id(), source }),
+    }
+}
+
+/// What to do about an error from an apply. Split out from [`apply_one`] so the
+/// precedence between the two very different meanings of 404 is unit-testable.
+#[derive(Debug, PartialEq, Eq)]
+enum Disposition {
+    /// The kind is not registered. Expected for `cilium.io/*` on a fresh
+    /// install; the caller requeues instead of failing.
+    DeferKind,
+    /// The kind exists, the object does not, and the apiserver did not create
+    /// it. Server-side apply is an upsert (KEP-555), so this is an apiserver
+    /// bug (rustkube#45); create it ourselves.
+    CreateMissing,
+    /// No PATCH verb at all. Older rustkube builds.
+    NoPatchSupport,
+    /// A real rejection — forbidden, invalid, conflict, server error.
+    Fail,
+}
+
+fn classify(e: &ErrorResponse) -> Disposition {
+    // Order matters: a missing *kind* and a missing *object* are both 404, and
+    // only the kind case may be deferred.
+    if is_kind_missing(e) {
+        Disposition::DeferKind
+    } else if e.code == 404 {
+        Disposition::CreateMissing
+    } else if e.code == 405 || e.code == 501 {
+        Disposition::NoPatchSupport
+    } else {
+        Disposition::Fail
     }
 }
 
@@ -156,5 +208,46 @@ mod tests {
             "ciliumloadbalancerippools.cilium.io \"storm-default\" not found"
         )));
         assert!(!is_kind_missing(&err(403, "")));
+    }
+
+    #[test]
+    fn the_two_meanings_of_404_are_dispatched_differently() {
+        // Kind not registered -> defer, so cilium.io CRs wait for the operator.
+        assert_eq!(
+            classify(&err(404, "the server could not find the requested resource")),
+            Disposition::DeferKind
+        );
+        assert_eq!(
+            classify(&err(404, "no matches for kind \"CiliumBGPPeerConfig\"")),
+            Disposition::DeferKind
+        );
+
+        // Object absent -> create it ourselves. This is the rustkube#45 shape,
+        // verbatim from the failure on the rig.
+        assert_eq!(
+            classify(&err(
+                404,
+                "resource \"/registry/serviceaccounts/kube-system/cilium\" not found"
+            )),
+            Disposition::CreateMissing
+        );
+    }
+
+    #[test]
+    fn real_rejections_are_never_papered_over() {
+        for (code, msg) in [
+            (403, "forbidden"),
+            (409, "conflict"),
+            (422, "Invalid value"),
+            (500, "internal error"),
+        ] {
+            assert_eq!(classify(&err(code, msg)), Disposition::Fail, "{code} must fail");
+        }
+    }
+
+    #[test]
+    fn absent_patch_verb_falls_back_to_create_replace() {
+        assert_eq!(classify(&err(405, "")), Disposition::NoPatchSupport);
+        assert_eq!(classify(&err(501, "")), Disposition::NoPatchSupport);
     }
 }
