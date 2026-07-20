@@ -4,8 +4,11 @@
 //! design; `dry-run` prints what would be applied without touching a cluster.
 
 use clap::{Parser, Subcommand};
-use kube::Client;
+use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
+use kube::api::{Api, PostParams};
+use kube::{Client, CustomResourceExt};
 use network_operator::{crd::Network, modes, render};
+use tracing::info;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[derive(Parser)]
@@ -43,10 +46,25 @@ async fn main() -> anyhow::Result<()> {
     match cli.command {
         None | Some(Command::Run) => {
             let client = Client::try_default().await?;
+            // The operator owns its own CRD — self-register it so deploying the
+            // operator is all that's needed; the admin only supplies a Network CR.
+            ensure_crd(&client).await?;
             network_operator::controller::run(client).await
         }
         Some(Command::DryRun { file }) => dry_run(&file),
     }
+}
+
+/// Register the `Network` CRD if it isn't already present. Create-if-absent
+/// (409 AlreadyExists is success) so we never fight an existing definition.
+async fn ensure_crd(client: &Client) -> anyhow::Result<()> {
+    let crds: Api<CustomResourceDefinition> = Api::all(client.clone());
+    match crds.create(&PostParams::default(), &Network::crd()).await {
+        Ok(_) => info!("registered Network CRD"),
+        Err(kube::Error::Api(ae)) if ae.code == 409 => info!("Network CRD already present"),
+        Err(e) => return Err(e.into()),
+    }
+    Ok(())
 }
 
 fn init_tracing(cli: &Cli) {
