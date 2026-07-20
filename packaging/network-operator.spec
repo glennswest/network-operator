@@ -49,6 +49,10 @@ done
 %{_datadir}/%{name}/
 
 %changelog
+* Mon Jul 20 2026 Glenn West <glennswest@neuralcloudcomputing.com> - 0.2.1-1
+- Fix agent init containers failing with EPERM: set pod-level seccomp and
+  AppArmor unconfined, and give every container an explicit capability set.
+
 * Mon Jul 20 2026 Glenn West <glennswest@neuralcloudcomputing.com> - 0.2.0-1
 - Standalone cilium-envoy DaemonSet, bootstrap ConfigMap and metrics Service.
 - spec.cilium.clusterName / clusterID; self-registration of the Network CRD.

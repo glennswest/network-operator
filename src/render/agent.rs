@@ -30,6 +30,17 @@ use super::{common_labels, meta, typed, Rendered, AGENT_DS, AGENT_HEALTH_PORT, A
 /// from anything in the spec.
 const APP_LABEL: (&str, &str) = ("k8s-app", "cilium");
 
+/// Capabilities the agent needs to program the datapath. Taken from a known-good
+/// upstream install — narrower than blanket `privileged: true`, which is what
+/// this used to grant.
+const AGENT_CAPS: &[&str] = &[
+    "CHOWN", "KILL", "NET_ADMIN", "NET_RAW", "IPC_LOCK", "SYS_MODULE", "SYS_ADMIN",
+    "SYS_RESOURCE", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID", "SYSLOG",
+];
+
+/// Entering PID 1's namespaces needs these three and nothing else.
+const NSENTER_CAPS: &[&str] = &["SYS_ADMIN", "SYS_CHROOT", "SYS_PTRACE"];
+
 pub fn render(cfg: &EffectiveConfig) -> Rendered {
     let mut pod_labels = common_labels(cfg);
     pod_labels.insert(APP_LABEL.0.to_string(), APP_LABEL.1.to_string());
@@ -78,6 +89,9 @@ fn pod_spec(cfg: &EffectiveConfig) -> PodSpec {
         restart_policy: Some("Always".to_string()),
         termination_grace_period_seconds: Some(1),
         tolerations: Some(tolerate_all()),
+        // Without this the init containers fail with EPERM — see
+        // util::unconfined_pod_security.
+        security_context: Some(unconfined_pod_security(false)),
         init_containers: Some(init_containers(cfg)),
         containers: vec![agent_container(cfg)],
         volumes: Some(volumes(cfg)),
@@ -113,7 +127,7 @@ fn agent_container(cfg: &EffectiveConfig) -> Container {
             failure_threshold: Some(3),
             ..health_probe(AGENT_HEALTH_PORT, "/healthz")
         }),
-        security_context: Some(privileged()),
+        security_context: Some(caps(AGENT_CAPS)),
         termination_message_policy: Some("FallbackToLogsOnError".to_string()),
         volume_mounts: Some(vec![
             mount_ro("cilium-config-path", "/tmp/cilium/config-map"),
@@ -166,6 +180,7 @@ fn init_containers(cfg: &EffectiveConfig) -> Vec<Container> {
                 env("KUBERNETES_SERVICE_PORT", &cfg.k8s_service_port.to_string()),
             ]),
             volume_mounts: Some(vec![mount("tmp", "/tmp")]),
+            security_context: Some(caps_no_selinux(&["NET_ADMIN"])),
             termination_message_policy: Some("FallbackToLogsOnError".to_string()),
             ..Default::default()
         },
@@ -189,7 +204,7 @@ fn init_containers(cfg: &EffectiveConfig) -> Vec<Container> {
             )
             .to_string()]),
             volume_mounts: Some(vec![mount("hostproc", "/hostproc"), mount("cni-path", "/hostbin")]),
-            security_context: Some(privileged()),
+            security_context: Some(caps(NSENTER_CAPS)),
             termination_message_policy: Some("FallbackToLogsOnError".to_string()),
             ..Default::default()
         },
@@ -206,7 +221,7 @@ fn init_containers(cfg: &EffectiveConfig) -> Vec<Container> {
             )
             .to_string()]),
             volume_mounts: Some(vec![mount("hostproc", "/hostproc"), mount("cni-path", "/hostbin")]),
-            security_context: Some(privileged()),
+            security_context: Some(caps(NSENTER_CAPS)),
             termination_message_policy: Some("FallbackToLogsOnError".to_string()),
             ..Default::default()
         },
@@ -239,7 +254,7 @@ fn init_containers(cfg: &EffectiveConfig) -> Vec<Container> {
                 mount("cilium-cgroup", "/run/cilium/cgroupv2"),
                 mount("cilium-run", "/var/run/cilium"),
             ]),
-            security_context: Some(privileged()),
+            security_context: Some(caps(&["NET_ADMIN", "SYS_MODULE", "SYS_ADMIN", "SYS_RESOURCE"])),
             termination_message_policy: Some("FallbackToLogsOnError".to_string()),
             ..Default::default()
         },
@@ -249,7 +264,7 @@ fn init_containers(cfg: &EffectiveConfig) -> Vec<Container> {
             image_pull_policy: Some("IfNotPresent".to_string()),
             command: Some(vec!["/install-plugin.sh".to_string()]),
             volume_mounts: Some(vec![mount("cni-path", "/host/opt/cni/bin")]),
-            security_context: Some(privileged()),
+            security_context: Some(selinux_only()),
             termination_message_policy: Some("FallbackToLogsOnError".to_string()),
             ..Default::default()
         },
@@ -360,6 +375,93 @@ mod tests {
         assert_eq!(tolerations[0].operator.as_deref(), Some("Exists"));
         assert!(tolerations[0].key.is_none());
         assert!(tolerations[0].effect.is_none());
+    }
+
+    /// Regression guard for #5. A default seccomp profile answers blocked
+    /// syscalls with EPERM, which stalled the `config` init container on nothing
+    /// more than an HTTPS call to the apiserver.
+    #[test]
+    fn pod_runs_unconfined_or_the_datapath_cannot_be_programmed() {
+        let ds = ds(&cfg_for(Mode::Overlay));
+        let sc = ds
+            .spec
+            .unwrap()
+            .template
+            .spec
+            .unwrap()
+            .security_context
+            .expect("pod-level securityContext is required");
+        assert_eq!(sc.seccomp_profile.unwrap().type_, "Unconfined");
+        assert_eq!(sc.app_armor_profile.unwrap().type_, "Unconfined");
+    }
+
+    /// Also #5: an absent securityContext silently inherits the runtime default,
+    /// which is how the `config` container ended up with no NET_ADMIN.
+    #[test]
+    fn every_container_states_its_privileges_explicitly() {
+        let ds = ds(&cfg_for(Mode::Overlay));
+        let pod = ds.spec.unwrap().template.spec.unwrap();
+        for c in pod.containers.iter().chain(pod.init_containers.as_ref().unwrap()) {
+            let sc = c
+                .security_context
+                .as_ref()
+                .unwrap_or_else(|| panic!("{} has no securityContext", c.name));
+            assert!(
+                sc.privileged == Some(true) || sc.capabilities.is_some() || sc.se_linux_options.is_some(),
+                "{} has an empty securityContext",
+                c.name
+            );
+        }
+    }
+
+    #[test]
+    fn privileges_match_the_known_good_install() {
+        let ds = ds(&cfg_for(Mode::Overlay));
+        let pod = ds.spec.unwrap().template.spec.unwrap();
+        let find = |name: &str| {
+            pod.containers
+                .iter()
+                .chain(pod.init_containers.as_ref().unwrap())
+                .find(|c| c.name == name)
+                .unwrap_or_else(|| panic!("no container {name}"))
+                .security_context
+                .clone()
+                .unwrap()
+        };
+        let added = |name: &str| find(name).capabilities.and_then(|c| c.add).unwrap_or_default();
+
+        // config only talks to the apiserver: one capability, and no SELinux
+        // label because it touches no host path.
+        assert_eq!(added("config"), vec!["NET_ADMIN"]);
+        assert!(find("config").se_linux_options.is_none());
+
+        assert_eq!(added("mount-cgroup"), NSENTER_CAPS);
+        assert_eq!(added("apply-sysctl-overwrites"), NSENTER_CAPS);
+        assert_eq!(added("cilium-agent"), AGENT_CAPS);
+
+        // Blanket privilege is reserved for the one container that truly needs
+        // it; everything else names its capabilities.
+        assert_eq!(find("mount-bpf-fs").privileged, Some(true));
+        for name in [
+            "config",
+            "mount-cgroup",
+            "apply-sysctl-overwrites",
+            "clean-cilium-state",
+            "install-cni-binaries",
+            "cilium-agent",
+        ] {
+            assert_ne!(find(name).privileged, Some(true), "{name} should not be privileged");
+        }
+
+        // Anything writing host paths needs the spc_t label under enforcing
+        // SELinux (rustkube-node#26).
+        for name in ["mount-cgroup", "clean-cilium-state", "install-cni-binaries", "cilium-agent"] {
+            assert_eq!(
+                find(name).se_linux_options.unwrap().type_.as_deref(),
+                Some("spc_t"),
+                "{name} needs the spc_t label"
+            );
+        }
     }
 
     #[test]

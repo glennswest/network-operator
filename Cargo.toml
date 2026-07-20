@@ -1,6 +1,6 @@
 [package]
 name = "network-operator"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 license = "Apache-2.0"
 description = "Cluster Network Operator for the rustkube/stormcos stack — manages the Cilium CNI lifecycle from a Network CR (install, upgrade, reconcile, status). CNO-equivalent, in Rust."

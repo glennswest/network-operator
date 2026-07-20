@@ -131,6 +131,7 @@ fn pod_spec(cfg: &EffectiveConfig) -> PodSpec {
             "linux".to_string(),
         )])),
         tolerations: Some(tolerate_all()),
+        security_context: Some(unconfined_pod_security(true)),
         affinity: Some(affinity()),
         containers: vec![container(cfg)],
         volumes: Some(volumes()),
@@ -440,6 +441,23 @@ mod tests {
             .node_selector_terms[0].match_expressions.clone().unwrap()[0];
         assert_eq!(no_schedule.key, "cilium.io/no-schedule");
         assert_eq!(no_schedule.operator, "NotIn");
+    }
+
+    /// #5: envoy needs AppArmor unconfined, but — unlike the agent — the
+    /// known-good install leaves seccomp at the default.
+    #[test]
+    fn pod_is_apparmor_unconfined_but_keeps_the_default_seccomp() {
+        let ds = daemon_set(&enabled());
+        let sc = ds
+            .spec
+            .unwrap()
+            .template
+            .spec
+            .unwrap()
+            .security_context
+            .expect("pod-level securityContext is required");
+        assert_eq!(sc.app_armor_profile.unwrap().type_, "Unconfined");
+        assert!(sc.seccomp_profile.is_none(), "envoy does not unconfine seccomp");
     }
 
     #[test]

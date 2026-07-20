@@ -2,8 +2,9 @@
 //! keep the workload renders readable — every one is a plain struct literal.
 
 use k8s_openapi::api::core::v1::{
-    ConfigMapKeySelector, ConfigMapVolumeSource, EmptyDirVolumeSource, EnvVar, EnvVarSource,
-    HTTPGetAction, HostPathVolumeSource, ObjectFieldSelector, Probe, SELinuxOptions,
+    AppArmorProfile, Capabilities, ConfigMapKeySelector, ConfigMapVolumeSource,
+    EmptyDirVolumeSource, EnvVar, EnvVarSource, HTTPGetAction, HostPathVolumeSource,
+    ObjectFieldSelector, PodSecurityContext, Probe, SELinuxOptions, SeccompProfile,
     SecurityContext, Toleration, Volume, VolumeMount,
 };
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
@@ -99,14 +100,65 @@ pub fn config_map_volume(name: &str, config_map: &str) -> Volume {
     }
 }
 
-/// Privileged security context with the SELinux label Cilium needs on an
-/// SELinux-enforcing host (`spc_t` — a super-privileged container).
+/// Fully privileged. Only `mount-bpf-fs` needs this; everything else uses an
+/// explicit capability set via [`caps`].
 pub fn privileged() -> SecurityContext {
+    SecurityContext { privileged: Some(true), ..Default::default() }
+}
+
+/// Drop every capability, then add back exactly the listed ones, with the
+/// SELinux label Cilium needs on an enforcing host (`spc_t` — a
+/// super-privileged container).
+///
+/// Preferred over blanket `privileged: true`: it is what upstream Cilium ships,
+/// and it keeps each container to the privileges it actually uses.
+pub fn caps(add: &[&str]) -> SecurityContext {
     SecurityContext {
-        privileged: Some(true),
+        capabilities: Some(Capabilities {
+            add: Some(add.iter().map(|c| c.to_string()).collect()),
+            drop: Some(vec!["ALL".to_string()]),
+        }),
         se_linux_options: Some(SELinuxOptions {
             level: Some("s0".to_string()),
             type_: Some("spc_t".to_string()),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
+
+/// Capabilities without the SELinux label — for containers that only talk to
+/// the apiserver and never touch host paths.
+pub fn caps_no_selinux(add: &[&str]) -> SecurityContext {
+    SecurityContext {
+        se_linux_options: None,
+        ..caps(add)
+    }
+}
+
+/// The SELinux label alone, no added capabilities.
+pub fn selinux_only() -> SecurityContext {
+    SecurityContext {
+        capabilities: None,
+        ..caps(&[])
+    }
+}
+
+/// Pod-level security context.
+///
+/// **Both profiles must be unconfined.** A default seccomp profile answers a
+/// blocked syscall with `EPERM`, which surfaces as the agent's init containers
+/// failing with "operation not permitted" — including `config`, which only
+/// wants to reach the apiserver. Cilium programs the datapath and cannot run
+/// under the default profiles.
+pub fn unconfined_pod_security(apparmor_only: bool) -> PodSecurityContext {
+    PodSecurityContext {
+        app_armor_profile: Some(AppArmorProfile {
+            type_: "Unconfined".to_string(),
+            ..Default::default()
+        }),
+        seccomp_profile: (!apparmor_only).then(|| SeccompProfile {
+            type_: "Unconfined".to_string(),
             ..Default::default()
         }),
         ..Default::default()

@@ -403,7 +403,23 @@ spec:
           periodSeconds: 30
           timeoutSeconds: 5
         securityContext:
-          privileged: true
+          capabilities:
+            add:
+            - CHOWN
+            - KILL
+            - NET_ADMIN
+            - NET_RAW
+            - IPC_LOCK
+            - SYS_MODULE
+            - SYS_ADMIN
+            - SYS_RESOURCE
+            - DAC_OVERRIDE
+            - FOWNER
+            - SETGID
+            - SETUID
+            - SYSLOG
+            drop:
+            - ALL
           seLinuxOptions:
             level: s0
             type: spc_t
@@ -466,6 +482,12 @@ spec:
         image: quay.io/cilium/cilium:v1.19.6
         imagePullPolicy: IfNotPresent
         name: config
+        securityContext:
+          capabilities:
+            add:
+            - NET_ADMIN
+            drop:
+            - ALL
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /tmp
@@ -484,7 +506,13 @@ spec:
         imagePullPolicy: IfNotPresent
         name: mount-cgroup
         securityContext:
-          privileged: true
+          capabilities:
+            add:
+            - SYS_ADMIN
+            - SYS_CHROOT
+            - SYS_PTRACE
+            drop:
+            - ALL
           seLinuxOptions:
             level: s0
             type: spc_t
@@ -506,7 +534,13 @@ spec:
         imagePullPolicy: IfNotPresent
         name: apply-sysctl-overwrites
         securityContext:
-          privileged: true
+          capabilities:
+            add:
+            - SYS_ADMIN
+            - SYS_CHROOT
+            - SYS_PTRACE
+            drop:
+            - ALL
           seLinuxOptions:
             level: s0
             type: spc_t
@@ -527,9 +561,6 @@ spec:
         name: mount-bpf-fs
         securityContext:
           privileged: true
-          seLinuxOptions:
-            level: s0
-            type: spc_t
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /sys/fs/bpf
@@ -554,7 +585,14 @@ spec:
         imagePullPolicy: IfNotPresent
         name: clean-cilium-state
         securityContext:
-          privileged: true
+          capabilities:
+            add:
+            - NET_ADMIN
+            - SYS_MODULE
+            - SYS_ADMIN
+            - SYS_RESOURCE
+            drop:
+            - ALL
           seLinuxOptions:
             level: s0
             type: spc_t
@@ -573,7 +611,6 @@ spec:
         imagePullPolicy: IfNotPresent
         name: install-cni-binaries
         securityContext:
-          privileged: true
           seLinuxOptions:
             level: s0
             type: spc_t
@@ -583,6 +620,11 @@ spec:
           name: cni-path
       priorityClassName: system-node-critical
       restartPolicy: Always
+      securityContext:
+        appArmorProfile:
+          type: Unconfined
+        seccompProfile:
+          type: Unconfined
       serviceAccountName: cilium
       terminationGracePeriodSeconds: 1
       tolerations:
