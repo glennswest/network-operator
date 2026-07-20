@@ -231,6 +231,12 @@ on Cilium for all five modes.
   (BPF programs on `eth0`/`cilium_host`/`cilium_net`, endpoint BPF reloaded),
   `CiliumNode` created, all pods `Running` at attempt 0. So the operator's
   rendered `overlay` install matches a known-good Cilium bring-up on the stack.
+- **Known upstream dependency (rustkube#44):** the operator aggregates the
+  DaemonSet's `numberReady` / `desiredNumberScheduled` into `Available` /
+  `Progressing`. A rustkube DaemonSet-controller bug currently mis-counts
+  scheduled pods and churns replacements, so those conditions are pessimistic
+  until it's fixed — the *render + server-side apply* (i.e. the operator owning
+  the install) is unaffected.
 
 Deliberately rejected rather than half-built, so the operator never installs
 something that cannot work — both fail validation with an explicit message:
