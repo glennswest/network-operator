@@ -221,6 +221,17 @@ on Cilium for all five modes.
   feature is turned off.
 - **P3** — webhook validation of the CR; metrics; must-gather hooks. *Not yet.*
 
+### Validation (2026-07-20)
+
+- Builds clean on x86_64 Linux (kube 0.98 / k8s-openapi `v1_32`); **75 tests
+  pass** (70 unit + 5 render/golden) — no cluster needed.
+- The target it manages is **live and healthy on the rustkube rig**: on
+  **rustkube v0.7.29 + fastetcd v1.0.4 + rustkube-node v0.2.0**, Cilium in
+  `overlay` mode came fully up — agent `cilium status: OK`, eBPF datapath loaded
+  (BPF programs on `eth0`/`cilium_host`/`cilium_net`, endpoint BPF reloaded),
+  `CiliumNode` created, all pods `Running` at attempt 0. So the operator's
+  rendered `overlay` install matches a known-good Cilium bring-up on the stack.
+
 Deliberately rejected rather than half-built, so the operator never installs
 something that cannot work — both fail validation with an explicit message:
 
