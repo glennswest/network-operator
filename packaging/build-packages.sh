@@ -104,7 +104,11 @@ rm -rf "$STAGE"
 # --layers=false keeps the ~1.7GB intermediate Rust build layer out of the
 # image store. The final image is ~15MB; the layer is pure waste on a build
 # host, and it is what filled the disk when this was first written.
-IMAGE="ghcr.io/glennswest/network-operator:$VERSION"
+# Registry-neutral on purpose: the image is distributed as the OCI archive
+# attached to the release and loaded with `podman load`, not pulled. The
+# localhost/ prefix is what `podman load` yields and what CRI-O treats as
+# local-only, so nothing ever tries to reach a registry for it.
+IMAGE="localhost/network-operator:$VERSION"
 
 command -v podman >/dev/null || {
     echo "error: podman not found — it is required to build the OCI archive" >&2
@@ -122,6 +126,14 @@ gzip -f "$DIST/network-operator-$VERSION-oci.tar"
 # a release missing it should fail the build, not ship quietly.
 test -s "$DIST/network-operator-$VERSION-oci.tar.gz" \
     || { echo "error: OCI archive is missing or empty" >&2; exit 1; }
+
+# The shipped manifest must name the image the shipped archive actually
+# contains, or a deploy silently looks for a tag that was never loaded.
+MANIFEST_IMAGE="localhost/network-operator:$VERSION"
+grep -q "image: $MANIFEST_IMAGE\b" deploy/operator.yaml || {
+    echo "error: deploy/operator.yaml does not reference $MANIFEST_IMAGE" >&2
+    exit 1
+}
 
 echo
 echo "==> artifacts"

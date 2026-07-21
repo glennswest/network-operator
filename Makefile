@@ -1,6 +1,7 @@
-REGISTRY ?= ghcr.io/glennswest
-TAG ?= latest
-IMAGE := $(REGISTRY)/network-operator:$(TAG)
+# The image is distributed as the OCI archive attached to each release, not via
+# a registry, so it is named local-only. `make packages` builds it.
+VERSION := $(shell grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+IMAGE := localhost/network-operator:$(VERSION)
 
 .PHONY: build test clippy crds golden image deploy dry-run
 
@@ -22,23 +23,12 @@ golden:
 	UPDATE_GOLDEN=1 cargo test --test golden
 
 image:
-	docker build -t $(IMAGE) .
+	podman build --layers=false -t $(IMAGE) .
 
 deploy:
 	kubectl apply -f deploy/crds/
 	kubectl apply -f deploy/operator.yaml
 
-# Credentials for the (currently private) ghcr package. Needs a token with
-# read:packages — `gh auth token` works if yours carries that scope.
-GHCR_USER ?= glennswest
-GHCR_TOKEN ?= $(shell gh auth token 2>/dev/null)
-pull-secret:
-	@test -n "$(GHCR_TOKEN)" || { echo "set GHCR_TOKEN (needs read:packages)"; exit 1; }
-	kubectl -n kube-system create secret docker-registry ghcr \
-	  --docker-server=ghcr.io \
-	  --docker-username=$(GHCR_USER) \
-	  --docker-password=$(GHCR_TOKEN) \
-	  --dry-run=client -o yaml | kubectl apply -f -
 
 # Render a Network manifest without a cluster: make dry-run FILE=examples/network-bgp.yaml
 FILE ?= examples/network-overlay.yaml

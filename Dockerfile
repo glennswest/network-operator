@@ -3,11 +3,11 @@
 FROM rust:1.95-alpine AS build
 RUN apk add --no-cache musl-dev
 WORKDIR /src
-# Cargo.lock is gitignored here, so it may not be in the build context. Commit
-# it (and add it to this COPY) if you want byte-reproducible images.
-COPY Cargo.toml ./
+# Cargo.lock is committed, so --locked pins the exact dependency versions a
+# release was built against and the image is reproducible from a tag.
+COPY Cargo.toml Cargo.lock ./
 COPY src ./src
-RUN cargo build --release --bin network-operator --target x86_64-unknown-linux-musl
+RUN cargo build --release --locked --bin network-operator --target x86_64-unknown-linux-musl
 
 FROM scratch
 # Links the ghcr package back to this repo, so the package page carries

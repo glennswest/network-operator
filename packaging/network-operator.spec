@@ -50,6 +50,12 @@ done
 %{_datadir}/%{name}/
 
 %changelog
+* Tue Jul 21 2026 Glenn West <glennswest@neuralcloudcomputing.com> - 0.2.4-1
+- Distribute the image as the OCI archive attached to the release; drop the
+  ghcr registry reference in favour of a local, loaded image.
+- Commit Cargo.lock and build --locked, so a release is reproducible from its
+  tag.
+
 * Mon Jul 20 2026 Glenn West <glennswest@neuralcloudcomputing.com> - 0.2.3-1
 - Ship a loadable OCI archive with every release, for build-time preloads and
   air-gapped installs.

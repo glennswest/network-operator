@@ -70,7 +70,11 @@ spec:
       - operator: Exists
       containers:
       - name: network-operator
-        image: ghcr.io/glennswest/network-operator:latest
+        # Loaded from the OCI archive shipped with the release, not pulled:
+        #   curl -L .../network-operator-<version>-oci.tar.gz | gunzip | podman load
+        # The tag must match the archive that was loaded onto the node; the
+        # package build checks the two agree.
+        image: localhost/network-operator:0.2.4
         imagePullPolicy: IfNotPresent
         args: ["run"]
         env:

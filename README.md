@@ -295,24 +295,20 @@ kubectl get network cluster            # Mode / Version / Available / Progressin
 
 #### The image
 
-`ghcr.io/glennswest/network-operator` is public — it pulls with no credentials:
+The operator image is distributed as an **OCI archive attached to each
+release** — there is no registry to reach, and no credentials to hold:
 
 ```
-podman pull ghcr.io/glennswest/network-operator:0.2.2
-```
-
-Every release also carries a loadable OCI archive — built unconditionally
-alongside the rpm and deb — for build-time preloads and air-gapped installs
-that would rather not reach a registry at all:
-
-```
-curl -L https://github.com/glennswest/network-operator/releases/download/v0.2.2/network-operator-0.2.2-oci.tar.gz \
+curl -L https://github.com/glennswest/network-operator/releases/download/v0.2.4/network-operator-0.2.4-oci.tar.gz \
   | gunzip | podman load
 ```
 
-If you mirror the image into a private registry, `make pull-secret` creates the
-pull Secret and `deploy/operator.yaml` needs an `imagePullSecrets` reference
-added.
+That loads `localhost/network-operator:0.2.4`, which is what
+`deploy/operator.yaml` references. The tag is deliberately registry-neutral:
+`localhost/` is what `podman load` produces and what CRI-O treats as local-only,
+so nothing ever tries to pull it. The package build fails if the manifest and
+the archive disagree on the tag.
 
-The operator is host-networked and control-plane-scheduled so it can start on a
-node that has no CNI yet — see "Bootstrap ordering" above.
+Preload it on every node that runs the operator — stormcos does this at image-
+build time.
+
