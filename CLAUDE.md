@@ -60,3 +60,18 @@ by someone else survive rather than being pruned. Drift-heal, not drift-purge.
 Older builds reject PATCH outright (rustkube#23), so `apply.rs` falls back to
 create/replace and `status.rs` walks patch `/status` -> PUT `/status` -> whole-
 object PUT.
+
+## Version
+
+`0.2.4` (tag `v0.2.4`). Version locations, all must match: `Cargo.toml`,
+`deploy/operator.yaml` (image tag), the OCI-archive example in `README.md`.
+`Cargo.lock` is committed (the image builds `--locked`).
+
+## Work plan
+
+- [ ] #10 docs from the code — README rewritten from the source, CHANGELOG.md
+      created, this file's version/plan/status, module docs checked; gaps
+      between old docs and code filed as issues.
+- [ ] #11 a presentation of purpose and functionality (after #10).
+- Open: #9 (render parity with the 18 objects stormcos ships, Cilium 1.20.1
+  pin), #8 (QA tests + must-gather), #7 (release profile).
