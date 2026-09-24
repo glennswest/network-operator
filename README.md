@@ -2,46 +2,89 @@
 
 The **Cluster Network Operator** for the rustkube / stormcos stack, in Rust.
 
-It owns the **lifecycle of the cluster network (Cilium)** — install, configure,
-upgrade, reconcile, and health-report — driven by a single declarative
-`Network` custom resource. It is the stack's analog of OpenShift's
-**Cluster Network Operator (CNO)**.
+It installs and keeps **Cilium** running from a single declarative `Network`
+custom resource: it renders every Cilium object from the CR, server-side
+applies them, reapplies them when they drift, deletes the ones a config change
+no longer wants, and reports health as `Available` / `Progressing` /
+`Degraded` conditions. It is the stack's analog of OpenShift's **Cluster
+Network Operator (CNO)**.
 
 > **Not** the same as `cilium-operator`. `cilium-operator` is Cilium's *own*
 > control plane (CRDs, IPAM allocation, identity/endpoint GC — it manages
-> Cilium's **data**). `network-operator` manages Cilium's **installation and
-> lifecycle** — the DaemonSets, the operator Deployment, the config, and their
-> upgrades — and reports whether the network is healthy.
+> Cilium's **data**). `network-operator` *installs* `cilium-operator`, along
+> with the agent DaemonSet, RBAC and config, and manages their
+> **lifecycle**.
 
-## Why this exists
+Version **0.2.4**. Everything below is read from the source at that version;
+where the code does not do something yet, this README says so.
 
-Installing a CNI by hand (`helm install` / `kubectl apply -f cilium.yaml`) has no
-reconciliation, no declarative upgrades, and no status. OpenShift never does
-that — the CNI is always owned by an operator (CNO for OVN‑Kubernetes; the Cilium
-OLM operator + a `CiliumConfig` CR for certified Cilium). `network-operator`
-brings that model to our stack:
+## What it does today
 
-- **Declarative** — one `Network` CR is the source of truth for the whole CNI.
-- **Self-healing** — config drift, a deleted DaemonSet, or a hand-edited
-  ConfigMap are reconciled back to the CR (the stack's self-healing requirement,
-  applied at the install layer).
-- **Upgrades** — bump the version in the CR; the operator rolls it out.
-- **Status** — the network's health is a first-class, queryable condition
-  (`Available` / `Progressing` / `Degraded`), like a cluster operator.
+- **One binary, two commands:** `run` (the controller, the default) and
+  `dry-run` (render a `Network` manifest to YAML, no cluster).
+- **Self-registers its CRD** on start (`Network.network.storm.io/v1`,
+  create-if-absent — see [Known gaps](#known-gaps)).
+- **Resolves** the CR: `spec.mode` supplies defaults, any field set under
+  `spec.cilium` overrides them, and the result is validated as a whole
+  (`src/modes.rs`). A spec that fails validation is not applied; the CR goes
+  `Degraded` with the field and the reason.
+- **Refuses immutable changes** (datapath family, IPAM mode, pod and service
+  CIDRs) by comparing against `status.applied*`, not by a webhook.
+- **Renders** the object set as pure Rust (`src/render/`) — no Helm, no
+  templates at runtime. The only embedded asset is the `cilium-envoy`
+  bootstrap JSON.
+- **Applies** each object with server-side apply (field manager
+  `network-operator`, `force`), in dependency order, with fallbacks for
+  rustkube apiservers.
+- **Reaps** the LB-IPAM / L2 / BGP CRs a previous config rendered and this
+  one does not.
+- **Watches** the `Network` plus every DaemonSet, Deployment and ConfigMap in
+  `kube-system` that it owns (owner reference), so a hand edit or a deletion
+  re-triggers a reconcile. It also resyncs every 60 s.
+- **Reports** `Available` / `Progressing` / `Degraded` on `Network.status`,
+  with `observedGeneration` and `lastTransitionTime` preserved across passes.
 
-## Scope
+### What gets rendered
 
-- **In:** the sole CNI, **Cilium** — RBAC, ConfigMap, `cilium` + `cilium-envoy`
-  DaemonSets, `cilium-operator` Deployment, and the Cilium config knobs
-  (kube-proxy replacement, IPAM mode, routing mode, LB‑IPAM / BGP).
-- **Out:** the pre-cluster control-plane VIP — that's
-  [stormlb](https://github.com/glennswest/stormlb), which runs *before* the
-  cluster and can't be a cluster workload. The two are complementary: stormlb
-  fronts the apiserver; network-operator manages in-cluster networking.
+Every object lands in `kube-system` (cluster-scoped ones have no namespace),
+carries `app.kubernetes.io/managed-by: network-operator`,
+`app.kubernetes.io/part-of: cilium`, `network.storm.io/owner: <Network name>`,
+and, on a live cluster, a controller owner reference to the `Network` — so
+deleting the CR garbage-collects the install. Apply order:
+
+| # | Object | When |
+|---|---|---|
+| 1 | `ServiceAccount/cilium`, `ServiceAccount/cilium-operator` | always |
+| 2 | `ClusterRole` + `ClusterRoleBinding` `cilium`, `cilium-operator` | always |
+| 3 | `Role` + `RoleBinding` `cilium-config-agent` (read ConfigMaps in `kube-system`) | always |
+| 4 | `ConfigMap/cilium-config` | always |
+| 5 | `DaemonSet/cilium` (agent; hostNetwork, `system-node-critical`, rolling update `maxUnavailable: 2`) | always |
+| 6 | `Deployment/cilium-operator` (`operator-generic` image, 1 replica, hostNetwork, `system-cluster-critical`) | always |
+| 7 | `ServiceAccount`, `ConfigMap/cilium-envoy-config`, `DaemonSet`, headless `Service` — all `cilium-envoy` | `spec.cilium.envoy.enabled: true` |
+| 8 | `CiliumLoadBalancerIPPool/storm-default` | LB-IPAM on |
+| 9 | `CiliumL2AnnouncementPolicy/storm-default` (`cilium.io/v2alpha1`) | `announce: l2` |
+| 10 | `CiliumBGPClusterConfig/storm`, `CiliumBGPPeerConfig/storm-peers`, `CiliumBGPAdvertisement/storm-advertisements` | `announce: bgp` |
+
+The `cilium.io` CRs are applied last because `cilium-operator` installs their
+CRDs itself: on a fresh install a missing CRD is **deferred**, not failed, and
+the reconcile requeues in 10 s with `Progressing=True
+(WaitingForCiliumCRDs)`. The LB pool and BGP CRs are addressed at
+`cilium.io/v2` for Cilium ≥ 1.17 and `v2alpha1` below that.
+
+`tests/golden/*.yaml` holds the full render for each mode (plus
+`overlay-envoy`); those files are the exact object list per mode.
+
+Compared with what the stormcos image ships today, the render is missing
+Hubble relay and the TLS-interception RBAC / `cilium-secrets` namespace —
+tracked in [#9](https://github.com/glennswest/network-operator/issues/9).
 
 ## The `Network` custom resource
 
-Desired state for the whole cluster network. One object, cluster-scoped.
+`network.storm.io/v1`, kind `Network`, plural `networks`, short name `net`,
+**cluster-scoped**, conventionally named `cluster`, with a `/status`
+subresource. `kubectl get net` prints Mode, Version, Available, Progressing,
+Degraded. The CRD in `deploy/crds/` is generated from `src/crd.rs`
+(`make crds`) — never hand-edit it.
 
 ```yaml
 apiVersion: network.storm.io/v1
@@ -50,265 +93,285 @@ metadata:
   name: cluster
 spec:
   cni: cilium
-  # A named mode picks a Cilium profile at install time (see "Network modes").
-  # It sets sane defaults for the fields below; anything set explicitly overrides
-  # the mode's default.
-  mode: overlay                       # overlay | native | bgp | encrypted | bare-metal
-  clusterNetwork: ["10.244.0.0/16"]   # pod CIDR(s)  (OpenShift: networking.clusterNetwork)
-  serviceNetwork: ["10.96.0.0/12"]    # service CIDR (OpenShift: networking.serviceNetwork)
+  mode: overlay
+  clusterNetwork: ["10.244.0.0/16"]
+  serviceNetwork: ["10.96.0.0/12"]
   cilium:
-    version: "1.19.6"                 # image tag; bumping it triggers a rollout
-    ipam:
-      mode: cluster-pool              # cluster-pool | kubernetes
-      clusterPoolIPv4MaskSize: 24
-    routing:
-      mode: tunnel                    # tunnel (VXLAN/Geneve) | native
-    mtu: 0                            # 0 = auto (node MTU - overhead), like CNO
-    kubeProxyReplacement: true        # eBPF ClusterIP/NodePort/LB/HostPort
-    hostRouting: bpf                  # bpf | legacy  (≈ OVN shared vs local gateway)
-    encryption:
-      type: none                      # none | wireguard | ipsec  (runtime-changeable)
-    k8sServiceHost: "192.168.8.98"    # apiserver the agent dials before Services exist
+    version: "1.19.6"
+    k8sServiceHost: "192.168.8.98"
     k8sServicePort: 6443
-    loadBalancer:                     # LB-IPAM + BGP/L2 for type=LoadBalancer
-      ipam: false
-      pools: ["192.168.8.240/28"]
-      announce: none                  # none | l2 | bgp
-      bgp:
-        localASN: 64512
-        peers: []
-status:
-  conditions:
-    - type: Available
-    - type: Progressing
-    - type: Degraded
-  appliedMode: overlay
-  appliedVersion: "1.19.6"
-  observedGeneration: 3
 ```
+
+### Every field, with its default
+
+"Mode" means the default comes from the mode table below.
+
+| Field | Default | Notes |
+|---|---|---|
+| `spec.cni` | `cilium` | The only value. |
+| `spec.mode` | `overlay` | `overlay` \| `native` \| `bgp` \| `encrypted` \| `bare-metal`. |
+| `spec.clusterNetwork` | — (**required**) | Pod CIDR(s), at least one, each a valid CIDR. Immutable. |
+| `spec.serviceNetwork` | — (**required**) | Service CIDR(s), at least one. Immutable. Recorded in status and guarded; not written into `cilium-config`. |
+| `spec.cilium.version` | `1.19.6` | Image tag for agent + operator; a leading `v` is added if missing. Bumping it is a rolling upgrade. |
+| `spec.cilium.registry` | `quay.io/cilium` | Prefix for `cilium`, `operator-generic` and `cilium-envoy` images. |
+| `spec.cilium.ipam.mode` | mode (`cluster-pool`) | `cluster-pool` \| `kubernetes`. Immutable. |
+| `spec.cilium.ipam.clusterPoolIPv4MaskSize` | `24` | 1–32 and strictly longer than every `clusterNetwork` prefix (cluster-pool only). |
+| `spec.cilium.routing.mode` | mode | `tunnel` (VXLAN, port 8472 — not configurable) \| `native` (sets `ipv4-native-routing-cidr` = clusterNetwork and `auto-direct-node-routes: true`). Immutable. |
+| `spec.cilium.mtu` | `0` | 0 = let the agent detect it (key omitted); otherwise 576–9216. |
+| `spec.cilium.kubeProxyReplacement` | `true` | eBPF service handling in place of kube-proxy. |
+| `spec.cilium.hostRouting` | `bpf` | `bpf` \| `legacy` (`enable-host-legacy-routing`). |
+| `spec.cilium.encryption.type` | mode (`none`) | `none` \| `wireguard`. `ipsec` is **rejected** (no keyfile Secret management). |
+| `spec.cilium.k8sServiceHost` | — (**required**) | Apiserver address the agent, operator and Envoy dial; with kube-proxy replacement there is no Service route to it until Cilium is up. |
+| `spec.cilium.k8sServicePort` | `6443` | Non-zero. |
+| `spec.cilium.loadBalancer.ipam` | mode (`false`) | LB-IPAM for `type: LoadBalancer`. When on, `pools` is required. |
+| `spec.cilium.loadBalancer.pools` | `[]` | CIDRs for `CiliumLoadBalancerIPPool/storm-default`. |
+| `spec.cilium.loadBalancer.announce` | mode (`none`) | `none` \| `l2` \| `bgp`. Anything but `none` requires `ipam: true`; `bgp` requires native routing. |
+| `spec.cilium.loadBalancer.bgp.localASN` | `0` | Required (1–4294967295) when announcing via BGP. |
+| `spec.cilium.loadBalancer.bgp.peers[]` | `[]` | `{address, asn}`; at least one for BGP; address must be an IP. Every node peers (no node selector); advertises PodCIDR + LoadBalancer IPs. |
+| `spec.cilium.envoy.enabled` | `false` | Split the L7 proxy into the `cilium-envoy` DaemonSet. |
+| `spec.cilium.envoy.image` | `<registry>/cilium-envoy:v1.36.9-1782267392-edeb3f2…` | Envoy is versioned independently of Cilium; the default pairs with 1.19. Set it explicitly on any other Cilium minor. |
+| `spec.cilium.clusterName` | `default` | Non-empty. |
+| `spec.cilium.clusterID` | `0` | 0–255. |
+
+Status, written only by the operator: `conditions`, `observedGeneration`,
+and `appliedMode`, `appliedVersion`, `appliedDatapath`, `appliedIpam`,
+`appliedClusterNetwork`, `appliedServiceNetwork` — the baseline for the
+immutability check, moved only by a successful reconcile.
 
 ## Network modes (install-time profiles)
 
-Like OpenShift picks a `networkType` and a handful of OVN options at install
-time, we pick a **mode** — a named, opinionated **Cilium profile**. Every mode is
-implemented with Cilium; the mode just selects a different Cilium config. `mode`
-sets defaults; any explicit `spec.cilium.*` field overrides its mode default, so
-modes are presets, not a straitjacket.
+A mode is a named set of defaults (`src/modes.rs`, `defaults_for`). Every
+mode starts from the same base and changes only its own cells; any explicit
+`spec.cilium.*` field wins. All modes: cluster-pool IPAM with /24 per node,
+kube-proxy replacement on, bpf host routing, MTU auto.
 
-| Mode | Datapath / routing | IPAM | kube-proxy repl. | Encryption | LoadBalancer | Use when |
-|---|---|---|---|---|---|---|
-| **overlay** *(default)* | tunnel (VXLAN/Geneve) | cluster-pool | on | none | off | Any L2 segment; no underlay routing needed. The safe bare-metal default. |
-| **native** | native routing + `autoDirectNodeRoutes` | cluster-pool | on | none | off | Nodes share an L2; want max throughput, no overlay. |
-| **bgp** | native routing + Cilium BGP control plane | cluster-pool / kubernetes | on | none | LB-IPAM + BGP | Routed fabric; advertise pod CIDRs + LB VIPs, ECMP. |
-| **encrypted** | tunnel | cluster-pool | on | **wireguard** | off | Untrusted underlay; transparent pod-to-pod encryption. |
-| **bare-metal** | tunnel | cluster-pool | on | none | **LB-IPAM + L2 announce** | Bare metal with no cloud LB — `type: LoadBalancer` via ARP/L2. |
+| Mode | Routing | Encryption | LB-IPAM | Announce | Use when |
+|---|---|---|---|---|---|
+| **overlay** *(default)* | tunnel (VXLAN) | none | off | none | Any L2 segment; the safe default. |
+| **native** | native + auto direct node routes | none | off | none | Nodes share an L2; no overlay. |
+| **bgp** | native + auto direct node routes | none | **on** | **bgp** | Routed fabric; advertise pod CIDRs + LB VIPs. Needs `pools`, `localASN`, `peers`. |
+| **encrypted** | tunnel (VXLAN) | **wireguard** | off | none | Untrusted underlay. |
+| **bare-metal** | tunnel (VXLAN) | none | **on** | **l2** | `type: LoadBalancer` via ARP, no cloud LB. Needs `pools`. |
 
-Modes are extensible — a mode is just a named default-set in the operator; adding
-one is a code change + a golden test, not a new CRD.
+`examples/` has `network-overlay.yaml`, `network-bgp.yaml` and
+`network-envoy.yaml`.
 
-### OpenShift concept → Cilium config
+### OpenShift concept → what this sets
 
-We reproduce OpenShift's install-time network surface, all through Cilium:
-
-| OpenShift (OVN-Kubernetes) | Cilium equivalent (what the mode sets) |
+| OpenShift (OVN-Kubernetes) | Here |
 |---|---|
-| `networkType` | always Cilium (the CNI) — `mode` picks the *profile* |
-| `clusterNetwork` / `serviceNetwork` | cluster-pool PodCIDRs / k8s service CIDR |
-| overlay (Geneve) vs local routes | `routing.mode: tunnel` vs `native` |
-| `gatewayConfig.routingViaHost` (local vs shared gw) | `hostRouting: legacy` vs `bpf` |
-| `mtu`, `genevePort` | `cilium.mtu`, tunnel port |
-| `ipsecConfig` (IPsec) | `encryption.type: ipsec` (or `wireguard`) |
-| hybrid overlay (Windows) | n/a (Linux + Cilium only) |
-| MetalLB / external LB | Cilium LB-IPAM + BGP / L2 announcements |
+| `networkType` | always Cilium; `mode` picks the profile |
+| `clusterNetwork` / `serviceNetwork` | `spec.clusterNetwork` (cluster-pool CIDR) / `spec.serviceNetwork` |
+| Geneve overlay vs local routes | `routing.mode: tunnel` (VXLAN) vs `native` |
+| `gatewayConfig.routingViaHost` | `hostRouting: legacy` vs `bpf` |
+| `mtu` | `cilium.mtu` |
+| `genevePort` | no equivalent: VXLAN port is fixed at 8472 |
+| `ipsecConfig` | `encryption.type: wireguard` (ipsec rejected) |
+| MetalLB / external LB | LB-IPAM + L2 or BGP announcements |
 
-### Immutability (matches OpenShift semantics)
+### Immutability
 
-Some choices can't change under a running dataplane without a disruptive
-re-plumb; the operator enforces this like CNO does:
+Checked by the reconciler against `status.applied*` (`src/immutable.rs`) —
+there is **no validating webhook**. A rejected change leaves the running
+install on its applied config, sets `Degraded=True (ReconcileFailed)` listing
+every violation, and does not move the baseline.
 
-- **Immutable after install** (rejected by the validating webhook if changed):
-  `mode`'s datapath family (overlay↔native), `clusterNetwork`, `serviceNetwork`,
-  IPAM mode.
-- **Runtime-changeable** (reconciled live, rolling as needed): `encryption`,
-  `loadBalancer` (LB-IPAM/BGP/L2), `mtu`, `version` (upgrade), kube-proxy
-  replacement toggles.
+- **Immutable after first successful apply:** the datapath family
+  (`tunnel` ↔ `native` — so `overlay`→`native` is rejected, but
+  `overlay`→`encrypted` and `native`→`bgp` are allowed), IPAM mode,
+  `clusterNetwork`, `serviceNetwork`.
+- **Everything else** is reapplied live: encryption, LB/BGP/L2, MTU, version,
+  kube-proxy replacement, host routing, Envoy, cluster name/ID.
 
-## Design
+## Reconcile loop
 
-```mermaid
-flowchart TD
-  CR["Network CR (spec)"] -->|watch| REC[Reconcile loop]
-  REC --> RENDER["Render Cilium objects\n(RBAC, ConfigMap, DaemonSets, operator Deployment)\nfrom spec + embedded templates"]
-  RENDER --> APPLY["Server-side apply\n(field-owner: network-operator)"]
-  APPLY --> K8S[(apiserver)]
-  K8S -->|watch owned objects| DRIFT[Drift detector]
-  DRIFT -->|changed/deleted| REC
-  K8S -->|DaemonSet/pod health| HEALTH[Health aggregator]
-  HEALTH --> STATUS["Update Network.status\nAvailable / Progressing / Degraded"]
-  STATUS --> CR
+`src/controller.rs`, one pass:
+
+1. **Resolve** the spec (mode defaults + overrides + validation).
+2. **Check immutability** against `status.applied*`.
+3. **Render and apply** every object in order (`src/apply.rs`).
+4. **Reap** LB/L2/BGP CRs this config no longer renders.
+5. **Observe** health and write status, including the new `applied*`.
+
+Requeue: 60 s after success, 10 s while Cilium CRs are deferred, 15 s after
+an error. Any failure in steps 1–3 is written to the CR as
+`Degraded=True (ReconcileFailed)`, while `Available` keeps reflecting the
+workloads that are actually running.
+
+### Health conditions (`src/health.rs`)
+
+| Condition | Rule |
+|---|---|
+| `Available=True` | `DaemonSet/cilium` has ≥ 1 desired pod and all are ready, **and** `cilium-operator` has ≥ 1 ready replica. Otherwise False with `Installing`, `NoSchedulableNodes`, `AgentNotReady` or `OperatorNotReady`. |
+| `Progressing=True` | workloads not created yet (`Installing`), Cilium CRs deferred (`WaitingForCiliumCRDs`), or either workload not fully ready *and* updated (`RolloutInProgress`). |
+| `Degraded=True` | this pass failed (`ReconcileFailed`, with the error), or a pod labelled `k8s-app=cilium` is in `CrashLoopBackOff` with ≥ 3 restarts (`PodsCrashLooping`). |
+
+`cilium-envoy`, `CiliumNode` objects and CRD establishment are **not** part
+of the health rollup today.
+
+### rustkube compatibility
+
+The control plane is rustkube. `apply.rs` and `status.rs` carry fallbacks
+for builds that predate its fixes; all of the rustkube issues they cite are
+now closed, and the fallbacks stay for older apiservers:
+
+- SSA 404 on a missing *object* (rustkube#45): the object is created directly.
+  A 404 on a missing *kind* is still deferral for `cilium.io` CRs.
+- No PATCH at all (405/501, rustkube#23): create, or replace with the current
+  `resourceVersion`.
+- Status write ladder: SSA patch on `/status` → PUT `/status` → whole-object
+  PUT (re-reading the spec first).
+- rustkube's apply-patch is a plain merge with no field ownership, so our
+  fields are restored on drift but fields someone else *added* survive:
+  drift-heal, not drift-purge.
+
+## The operator process
+
+### Command line and environment (`src/main.rs`)
+
+```
+network-operator [--log <filter>] [--log-json] [run | dry-run [FILE]]
 ```
 
-1. **Watch** the `Network` CR and every object the operator owns (via an
-   owner-reference / a stable field-owner).
-2. **Render** the concrete Cilium manifests from `spec` using version-pinned
-   embedded templates (no external Helm at runtime — the render is deterministic
-   and testable).
-3. **Apply** with **server-side apply** (idempotent, tracks the operator as the
-   field owner) so hand-edits and drift are reverted on the next reconcile.
-4. **Detect drift**: a watch on owned objects re-triggers reconcile when anything
-   the operator owns is modified or deleted → self-heal.
-5. **Aggregate health**: roll up the `cilium` DaemonSet (desired vs ready),
-   the operator Deployment, and CiliumNode readiness into the CR's conditions.
-6. **Upgrade**: changing `spec.cilium.version` re-renders with the new tag; the
-   DaemonSet rolling update carries the agents over, `Progressing=True` until
-   `numberReady == desired`, then `Available=True`.
+| Flag | Env | Default | |
+|---|---|---|---|
+| `--log` | `RUST_LOG` | `info` | tracing filter, e.g. `network_operator=debug` |
+| `--log-json` | `LOG_JSON` | off | JSON log lines |
+| `run` | | (default command) | connect, register the CRD, run the controller |
+| `dry-run [FILE]` | | `-` (stdin) | print the rendered YAML stream; nothing contacts a cluster |
 
-### Rendering
+`run` uses the standard kube client config: the in-cluster ServiceAccount
+when deployed, otherwise `KUBECONFIG` / `~/.kube/config`. There is no config
+file.
 
-Templates are embedded in the binary and pinned per supported Cilium version, so
-a given `version` always renders the same, verifiable manifest set — unit-tested
-by golden files. This avoids a runtime Helm dependency and makes upgrades a code
-review, not a live templating surprise.
+### Ports, health, metrics
 
-### Status conditions (cluster-operator semantics)
+**The operator itself listens on nothing**: no health endpoint, no metrics
+endpoint, no probes on its Deployment (see [Known gaps](#known-gaps)). Its
+health is visible as the `Network` conditions and its logs.
 
-| Condition | True when |
-|---|---|
-| `Available` | agent DaemonSet fully ready, operator ready, CRDs Established |
-| `Progressing` | a rollout/upgrade is in flight (ready < desired) |
-| `Degraded` | pods crash-looping past backoff, or reconcile/apply failing |
+Ports in what it *renders* (all host ports, since those pods are
+host-networked):
 
-### Bootstrap ordering
-
-Unlike stormlb (pre-cluster), network-operator runs **as a cluster workload**
-after the apiserver is up. It is deployed early (static manifest or by the
-installer), then it brings up Cilium. Chicken-and-egg is avoided because the
-operator itself needs no pod networking (host-network Deployment) until Cilium is
-running.
-
-## Comparison to OpenShift CNO
-
-| | OpenShift CNO | network-operator |
+| Port | Where | What |
 |---|---|---|
-| CR | `Network.operator.openshift.io` | `Network.storm.io` |
-| CNI | OVN‑K (built-in) / certified Cilium via OLM | Cilium (sole CNI) |
-| Render | Go templates | Rust embedded templates (golden-tested) |
-| Apply | server-side apply | server-side apply |
-| Drift | reconciled | reconciled |
-| Status | ClusterOperator conditions | `Network.status` conditions |
+| 9879 | `cilium` agent | `/healthz` (`agent-health-port`); startup, liveness, readiness probes |
+| 9234 | `cilium-operator` | `/healthz` on `127.0.0.1` (`operator-api-serve-addr`) |
+| 9878 | `cilium-envoy` | health listener (loopback) |
+| 9964 | `cilium-envoy` | Prometheus metrics; exposed by the headless `cilium-envoy` Service |
+| 8472/udp | every node | VXLAN (tunnel modes) |
+
+## Build and test
+
+Builds and tests run on the build box, never on the session VM and never as
+root. Push first, then:
+
+```
+sc-build                          # cargo build && cargo test, on dev.g8.lo
+sc-build 'cargo clippy --all-targets -- -D warnings'
+```
+
+`sc-build` fetches the pushed commit into a scratch directory as the
+unprivileged `stormbuild` user, runs the command and deletes the directory.
+The tests are pure (unit + golden); no cluster is needed.
+
+Make targets (run through `sc-build 'make …'` where they need cargo):
+
+| Target | Does |
+|---|---|
+| `make test` / `make clippy` | as above |
+| `make crds` | regenerate `deploy/crds/network.storm.io_networks.yaml` from `src/crd.rs` |
+| `make golden` | re-record `tests/golden/` after an intended render change — review the diff |
+| `make dry-run FILE=examples/network-bgp.yaml` | render a CR without a cluster |
+| `make image` | `podman build` → `localhost/network-operator:<version>` |
+| `make packages` | `packaging/build-packages.sh`: `.rpm`, `.deb`, and the gzipped OCI archive, in `dist/` |
+
+## How it ships
+
+- **Container image**: static musl binary on `scratch` (`Dockerfile`), built
+  `--locked` from the committed `Cargo.lock`. Entrypoint `/network-operator`,
+  default command `run`. It is distributed as an **OCI archive attached to
+  each GitHub release**, not through a registry:
+
+  ```
+  curl -L https://github.com/glennswest/network-operator/releases/download/v0.2.4/network-operator-0.2.4-oci.tar.gz \
+    | gunzip | podman load        # -> localhost/network-operator:0.2.4
+  ```
+
+  `localhost/` is local-only to CRI-O, so nothing ever tries to pull it; the
+  image must be preloaded on every node that may run the operator. The
+  package build fails if `deploy/operator.yaml` and the archive disagree on
+  the tag.
+- **`.rpm` / `.deb`** with the binary, `network-operator-crdgen`, the CRD,
+  `deploy/operator.yaml` and the examples under
+  `/usr/share/network-operator/`.
+- **Deployment** (`deploy/operator.yaml`): `ServiceAccount`, a cluster-admin
+  equivalent `ClusterRole` (it creates the Cilium ClusterRoles, and RBAC
+  escalation prevention requires it to hold their union), and a 1-replica
+  `Recreate` Deployment in `kube-system` — hostNetwork, control-plane node
+  selector, tolerates everything, `system-cluster-critical`, read-only root,
+  no capabilities. hostNetwork is what lets it start on a node with no CNI and
+  then bring Cilium up underneath itself.
+
+  ```
+  kubectl apply -f deploy/operator.yaml
+  kubectl apply -f examples/network-overlay.yaml   # edit k8sServiceHost first
+  kubectl get net cluster
+  ```
+
+  Applying `deploy/crds/` first is optional — the operator registers the CRD
+  if absent — but it is how an existing CRD's schema gets updated.
+- **Golden / stormcos**: there is **no golden** for network-operator —
+  stormcentral's component registry and stormcos `deploy/build-goldens.sh`
+  do not list it. stormcos's `kubernetes` edition declares it as a
+  `container` component with `run = "deployment"` and preloads its image
+  and the Cilium images it renders. The pins in that edition currently
+  disagree with this repo (it names `ghcr.io/glennswest/network-operator:0.2.3`,
+  Cilium `v1.20.1` and a `v1.37.5` Envoy); that is being reconciled in the
+  stormcos consistency pass and
+  [#9](https://github.com/glennswest/network-operator/issues/9).
 
 ## Relationship to the rest of the stack
 
-- **rustkube** — the control plane the operator talks to (a client-go‑style Rust
-  client). Needs watch/informers (rustkube#39) to reconcile reliably.
-- **rustkube-node** — the kubelet that runs the Cilium pods (v0.2.0 already runs
-  the agent: seLinuxOptions/privileged/startupProbe fixes).
-- **stormlb** — the pre-cluster API/ingress VIP LB (separate concern).
-- **Cilium is the sole networking stack** — this operator is the *only* supported
-  way to install/upgrade it.
+- **rustkube** — the apiserver it talks to (kube-rs client, standard
+  Kubernetes API).
+- **rustkube-node** — the kubelet that runs the Cilium pods (the agent's
+  `startupProbe` depends on its probe support).
+- **stormcos-cilium** — pins the Cilium images (by digest) and chart that
+  stormcos ships; network-operator's defaults must match it (#9).
+- **stormlb** — the pre-cluster apiserver VIP; a separate concern.
+  stormlb fronts the apiserver, network-operator manages in-cluster
+  networking.
 
-## Status
+## Known gaps
 
-**P0–P2 implemented.** The operator installs, upgrades, drift-heals and reports
-on Cilium for all five modes.
+What earlier versions of this README promised or implied, and the code does
+not do yet:
 
-- **P0** ✅ — `Network` CRD + reconcile loop: render + server-side apply the
-  Cilium objects from the CR; owner-refs; `Available`/`Progressing` status.
-- **P1** ✅ — drift reconciliation (watch owned objects, self-heal); `Degraded`
-  from pod/rollout health; declarative version upgrade (rolling).
-- **P2** ✅ — LB‑IPAM / BGP / L2 config passthrough; immutable fields rejected
-  against `status.applied*` rather than half-applied; objects removed when a
-  feature is turned off.
-- **P3** — webhook validation of the CR; metrics; must-gather hooks. *Not yet.*
+- Immutability is enforced by the reconciler, **not** a validating webhook.
+- `Available` does not look at `CiliumNode` readiness, Cilium CRD
+  establishment, or `cilium-envoy`.
+- Turning `envoy.enabled` off does **not** delete the `cilium-envoy` objects;
+  only the LB/L2/BGP CRs are reaped.
+- The CRD is registered create-if-absent, so upgrading the operator does not
+  update an existing CRD's schema; apply `deploy/crds/` on upgrade.
+- The operator exposes no health or metrics endpoint.
+- The tunnel protocol is VXLAN only (no Geneve, no port override); IPv6 and
+  dual-stack are not supported; IPsec is rejected.
+- Rendering is Rust code, not per-Cilium-version templates: `version` changes
+  the image tags and the `cilium.io` API version, nothing else. Config keys
+  that a newer Cilium renamed are not tracked (#9).
+- Render parity with what stormcos ships (Hubble, TLS interception): #9.
 
-### Validation (2026-07-20)
+## Validation
 
-- Builds clean on x86_64 Linux (kube 0.98 / k8s-openapi `v1_32`); **75 tests
-  pass** (70 unit + 5 render/golden) — no cluster needed.
-- The target it manages is **live and healthy on the rustkube rig**: on
-  **rustkube v0.7.29 + fastetcd v1.0.4 + rustkube-node v0.2.0**, Cilium in
-  `overlay` mode came fully up — agent `cilium status: OK`, eBPF datapath loaded
-  (BPF programs on `eth0`/`cilium_host`/`cilium_net`, endpoint BPF reloaded),
-  `CiliumNode` created, all pods `Running` at attempt 0. So the operator's
-  rendered `overlay` install matches a known-good Cilium bring-up on the stack.
-- **Known upstream dependency (rustkube#44):** the operator aggregates the
-  DaemonSet's `numberReady` / `desiredNumberScheduled` into `Available` /
-  `Progressing`. A rustkube DaemonSet-controller bug currently mis-counts
-  scheduled pods and churns replacements, so those conditions are pessimistic
-  until it's fixed — the *render + server-side apply* (i.e. the operator owning
-  the install) is unaffected.
+- `sc-build` on dev.g8.lo: `cargo build && cargo test` — unit tests plus the
+  golden render tests, no cluster.
+- 2026-07-20, on rustkube v0.7.29 + fastetcd v1.0.4 + rustkube-node v0.2.0:
+  an `overlay` install matching this render came fully up (agent
+  `cilium status: OK`, BPF programs loaded, `CiliumNode` created, all pods
+  `Running` at attempt 0).
 
-Deliberately rejected rather than half-built, so the operator never installs
-something that cannot work — it fails validation with an explicit message:
+## License
 
-- `encryption.type: ipsec` — needs a pre-shared keyfile Secret we do not manage.
-  Use `wireguard`.
-
-### The L7 proxy
-
-`spec.cilium.envoy.enabled: true` splits the proxy out of the agent into a
-standalone `cilium-envoy` DaemonSet (plus its bootstrap ConfigMap and a headless
-metrics Service), and adds the shared socket directory to the agent so it can
-serve xDS to it. Off by default — Cilium embeds the proxy unless you split it
-out, and the embedded one serves L7 policy fine. Splitting it out decouples
-proxy restarts from agent restarts, which matters once L7 policy or Ingress
-carries real traffic. See `examples/network-envoy.yaml`.
-
-The bootstrap config is embedded **verbatim from a known-good running install**
-rather than generated — it is cluster-agnostic, so it needs no templating, and
-inventing an Envoy xDS bootstrap would be a far worse idea than copying one that
-works.
-
-Note that Envoy is versioned independently of Cilium: the tag looks like
-`v1.36.9-<build>-<sha>` and cannot be derived from `spec.cilium.version`. The
-operator pins a default paired with the Cilium 1.19 series; on any other minor,
-set `spec.cilium.envoy.image` explicitly.
-
-## Build
-
-```
-cargo build --release
-cargo test          # unit + golden tests; no cluster needed
-make clippy
-```
-
-### Try it without a cluster
-
-The render is pure, so you can see exactly what a CR would install:
-
-```
-make dry-run FILE=examples/network-bgp.yaml
-```
-
-Every mode's full manifest set is checked in under `tests/golden/`, so a change
-to what gets installed shows up as a reviewable diff. After an intended change,
-`make golden` re-records them.
-
-### Deploy
-
-```
-kubectl apply -f deploy/crds/          # the Network CRD (generated: make crds)
-kubectl apply -f deploy/operator.yaml  # the operator itself
-kubectl apply -f examples/network-overlay.yaml
-kubectl get network cluster            # Mode / Version / Available / Progressing / Degraded
-```
-
-#### The image
-
-The operator image is distributed as an **OCI archive attached to each
-release** — there is no registry to reach, and no credentials to hold:
-
-```
-curl -L https://github.com/glennswest/network-operator/releases/download/v0.2.4/network-operator-0.2.4-oci.tar.gz \
-  | gunzip | podman load
-```
-
-That loads `localhost/network-operator:0.2.4`, which is what
-`deploy/operator.yaml` references. The tag is deliberately registry-neutral:
-`localhost/` is what `podman load` produces and what CRI-O treats as local-only,
-so nothing ever tries to pull it. The package build fails if the manifest and
-the archive disagree on the tag.
-
-Preload it on every node that runs the operator — stormcos does this at image-
-build time.
-
+Apache-2.0.
