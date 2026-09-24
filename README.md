@@ -348,14 +348,14 @@ Make targets (run through `sc-build 'make …'` where they need cargo):
 What earlier versions of this README promised or implied, and the code does
 not do yet:
 
-- Immutability is enforced by the reconciler, **not** a validating webhook.
+- Immutability is enforced by the reconciler, **not** a validating webhook (#15).
 - `Available` does not look at `CiliumNode` readiness, Cilium CRD
-  establishment, or `cilium-envoy`.
-- Turning `envoy.enabled` off does **not** delete the `cilium-envoy` objects;
+  establishment, or `cilium-envoy` (#14).
+- Turning `envoy.enabled` off does **not** delete the `cilium-envoy` objects (#12);
   only the LB/L2/BGP CRs are reaped.
 - The CRD is registered create-if-absent, so upgrading the operator does not
-  update an existing CRD's schema; apply `deploy/crds/` on upgrade.
-- The operator exposes no health or metrics endpoint.
+  update an existing CRD's schema; apply `deploy/crds/` on upgrade (#13).
+- The operator exposes no health or metrics endpoint (#15).
 - The tunnel protocol is VXLAN only (no Geneve, no port override); IPv6 and
   dual-stack are not supported; IPsec is rejected.
 - Rendering is Rust code, not per-Cilium-version templates: `version` changes

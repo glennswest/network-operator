@@ -10,7 +10,7 @@
   section replacing claims the code does not meet (validating webhook,
   CiliumNode/CRD health, per-version templates, Geneve).
 - **docs:** CHANGELOG.md created; CLAUDE.md carries version, work plan and status.
-- **docs:** `render::reapable` doc notes the `cilium-envoy` objects are not reaped.
+- **docs:** `render::reapable` doc notes the `cilium-envoy` objects are not reaped; gaps filed as #12–#15.
 
 ## [v0.2.4] — 2026-09
 

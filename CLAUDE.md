@@ -69,9 +69,17 @@ object PUT.
 
 ## Work plan
 
-- [ ] #10 docs from the code — README rewritten from the source, CHANGELOG.md
-      created, this file's version/plan/status, module docs checked; gaps
-      between old docs and code filed as issues.
+- [x] #10 docs from the code — README rewritten from the source, CHANGELOG.md
+      created, module docs checked. Gaps filed: #12 (envoy not reaped), #13
+      (CRD never updated), #14 (health rollup), #15 (no health/metrics
+      endpoint, no webhook). Cross-component pin mismatches reported on
+      stormcos#65.
 - [ ] #11 a presentation of purpose and functionality (after #10).
 - Open: #9 (render parity with the 18 objects stormcos ships, Cilium 1.20.1
-  pin), #8 (QA tests + must-gather), #7 (release profile).
+  pin), #8 (QA tests + must-gather), #7 (release profile), #12–#15.
+
+## Status
+
+Renders, applies, drift-heals and reports on Cilium for all five modes plus
+the optional standalone Envoy. Not shipped as a golden; the image is an OCI
+archive on each release, preloaded by stormcos.
