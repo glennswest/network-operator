@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### 2026-09-27 (docs refresh)
+- **chore:** `.gitignore` covers `tmp/` (session scratch files)
 - **docs:** README "How it ships" now tabulates the three disagreeing pin
   sources (this repo 1.19.6 / `localhost/…:0.2.4`, the stormcos edition
   1.20.1 / `ghcr…:0.2.3`, stormcos-cilium 1.20.2 by digest) with their issues

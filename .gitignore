@@ -3,3 +3,6 @@
 /dist
 /test/.stage
 /test/target
+
+# Scratch (session tmp files)
+tmp/

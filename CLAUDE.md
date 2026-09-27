@@ -89,9 +89,10 @@ object PUT.
       clippy under sc-build; image built and smoke-run with podman on dev;
       stormcentral's runner built it (test/build.sh + podman build) and pushed
       it to C2NR0Q2's registry (run a845a17d5c, 2a1232c). stormcentral#56
-      (`@@RESULT` parse) is fixed in stormcentral 15:07 2026-09-27; the next
-      run (dcae784bb9, 9998abd) got past it but C2NR0Q2's sbregistry (:5100)
-      refused connections (apiserver /readyz 200; still refused 10 min
+      (`@@RESULT` parse) has a fix in stormcentral (20a570b, 15:07 2026-09-27),
+      not yet exercised: the next run (dcae784bb9, 9998abd) stopped earlier,
+      at the image lookup, because C2NR0Q2's sbregistry (:5100) refused
+      connections (apiserver /readyz 200; still refused 10 min
       later, every component's runs hit it). Blocked: stormcos#135 /
       stormcentral#71 (node sbregistry not listening). After it: `stormcentral test run
       network-operator short` on C2NR0Q2, fix what it finds, then medium.
