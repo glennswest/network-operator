@@ -16,7 +16,9 @@ Network Operator (CNO)**.
 > **lifecycle**.
 
 Version **0.2.4**. Everything below is read from the source at that version;
-where the code does not do something yet, this README says so.
+where the code does not do something yet, this README says so. A short
+slide deck of the same material is in [`docs/presentation.md`](docs/presentation.md)
+(Marp: `npx @marp-team/marp-cli docs/presentation.md`).
 
 ## What it does today
 
