@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### 2026-09-27
-- **docs:** `docs/presentation.md`, a 12-slide Marp deck of purpose and
+- **docs:** `docs/presentation.md`, a 11-slide Marp deck of purpose and
   functionality (#11): problem, place in stormcos (per `stormcentral check`),
   architecture, modes, features, interfaces, shipping, planned work, status.
   Linked from the README. Missing stormcos → network-operator edge in

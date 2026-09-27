@@ -76,7 +76,7 @@ object PUT.
       (CRD never updated), #14 (health rollup), #15 (no health/metrics
       endpoint, no webhook). Cross-component pin mismatches reported on
       stormcos#65.
-- [x] #11 presentation — `docs/presentation.md` (Marp, 12 slides), drawn
+- [x] #11 presentation — `docs/presentation.md` (Marp, 11 slides), drawn
       from README; "where it sits" from `stormcentral check` (missing
       stormcos edge filed as stormcentral#52). Keep it in step with README.
 - Open: #9 (render parity with the 18 objects stormcos ships, Cilium 1.20.1
