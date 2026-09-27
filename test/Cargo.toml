@@ -1,0 +1,30 @@
+[package]
+name = "network-operator-test"
+version = "0.1.0"
+edition = "2021"
+description = "network-operator's test container: short, medium and long suites against a running cluster (stormcentral docs/test-standard.md)."
+license = "Apache-2.0"
+publish = false
+
+# Its own workspace: the root `cargo build --locked` never sees it, and it has
+# its own Cargo.lock.
+[workspace]
+
+[[bin]]
+name = "network-operator-test"
+path = "src/main.rs"
+
+[dependencies]
+# The operator's own types and policy: the Network CR is read with its serde
+# types, and what status.applied* should say is computed with its own
+# `modes::resolve_network` + `immutable::applied_from`, so the test cannot
+# drift from the code it tests.
+network-operator = { path = ".." }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "macros", "sync", "io-util"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+serde_json = "1"
+ipnet = "2"
+
+[profile.release]
+opt-level = "s"
+strip = true

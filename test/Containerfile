@@ -1,0 +1,15 @@
+# network-operator-test: network-operator's test container, per stormcentral
+# docs/test-standard.md. One image serves all three suites: the runner starts
+# it as `/test short|medium|long`. The same image is the workload the suites
+# start in pods (`/test workload serve 8080`), so nothing else is pulled.
+#
+# The context is the repo root; test/build.sh (run first, on the build box)
+# builds the static musl binary into test/.stage/test.
+#
+#   test/build.sh && podman build -f test/Containerfile \
+#     --build-arg COMMIT=$(git rev-parse HEAD) -t network-operator-test .
+FROM scratch
+ARG COMMIT=unknown
+LABEL storm.io/test-of="network-operator" storm.io/test-commit="${COMMIT}"
+COPY test/.stage/test /test
+ENTRYPOINT ["/test"]
