@@ -98,8 +98,10 @@ sc-build 'cd test && cargo test --locked && cargo clippy --locked --all-targets 
 sc-build 'test/build.sh'
 ```
 
-Run a suite on the test machines (as of 2026-09-27 every run stops before
-the Job is created, on stormcentral#56):
+Run a suite on the test machines (as of 2026-09-27 no run has reached a
+Job: C2NR0Q2's node registry refuses connections, stormcos#135 /
+stormcentral#71; the runner's `@@RESULT` fix for stormcentral#56 is not yet
+exercised):
 
 ```
 stormcentral test run network-operator short --url http://stormcentral.g8.lo

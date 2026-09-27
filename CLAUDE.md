@@ -112,4 +112,4 @@ the optional standalone Envoy. Not shipped as a golden (#18); the image is an
 OCI archive on each release, preloaded by stormcos. Docs last refreshed from
 the code 2026-09-27; operator code unchanged since v0.2.4 (only `test/` and
 docs since). `test/` suites built and pushed by stormcentral, never yet run
-on a cluster (stormcentral#56).
+on a cluster (stormcos#135, then stormcentral#56).

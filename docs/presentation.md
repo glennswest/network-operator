@@ -211,8 +211,10 @@ Each is an open issue; the docs say so rather than promise it.
     renders 1.19.6 and ships `localhost/…:0.2.4`; the stormcos edition preloads
     Cilium 1.20.1, Envoy 1.37.5 and `ghcr…:0.2.3`; stormcos-cilium pins 1.20.2.
     A mismatch means a runtime pull on a node with no CNI.
-  - **stormcentral#56 / #55** — the `test/` suites are built and pushed but
-    no run reaches a cluster yet (#56); once they do, the `Network` checks
-    report *could not run* until test runs get cluster-scoped read (#55).
+  - **stormcos#135 / stormcentral#56 / #55** — the `test/` suites are built
+    but no run reaches a cluster yet: the test machine's registry refuses
+    connections (stormcos#135), and the runner's `@@RESULT` fix (#56) is
+    unexercised. Then the `Network` checks report *could not run* until test
+    runs get cluster-scoped read (#55).
   - **Decisions**: #18 (a golden or not), #19 (where drift-heal is tested).
   - **#8** QA tests + must-gather, **#7** release profile.

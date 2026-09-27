@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### 2026-09-27 (docs refresh)
+- **docs:** re-verified README, `test/README.md`, the deck and CLAUDE.md
+  against the code (operator unchanged since v0.2.4). README lists the
+  `make build` and `make deploy` targets; the test-run status now names the
+  current blocker (C2NR0Q2's node registry, stormcos#135 / stormcentral#71)
+  and says the stormcentral#56 fix is not yet exercised.
 - **chore:** `.gitignore` covers `tmp/` (session scratch files)
 - **docs:** README "How it ships" now tabulates the three disagreeing pin
   sources (this repo 1.19.6 / `localhost/…:0.2.4`, the stormcos edition

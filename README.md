@@ -281,11 +281,13 @@ Make targets (run through `sc-build 'make …'` where they need cargo):
 
 | Target | Does |
 |---|---|
+| `make build` | `cargo build --release` |
 | `make test` / `make clippy` | as above |
 | `make crds` | regenerate `deploy/crds/network.storm.io_networks.yaml` from `src/crd.rs` |
 | `make golden` | re-record `tests/golden/` after an intended render change — review the diff |
 | `make dry-run FILE=examples/network-bgp.yaml` | render a CR without a cluster |
 | `make image` | `podman build` → `localhost/network-operator:<version>` |
+| `make deploy` | `kubectl apply` of `deploy/crds/` then `deploy/operator.yaml` |
 | `make packages` | `packaging/build-packages.sh`: `.rpm`, `.deb`, and the gzipped OCI archive, in `dist/` |
 
 ### Tests on a running cluster (`test/`)
@@ -303,10 +305,12 @@ Every test, its skips and what a run needs are in
 cluster-scoped read of `networks` and `nodes` (stormcentral#55), the tests
 that read them report *could not run* (exit 2).
 
-**Status, 2026-09-27: no suite has run on a cluster yet.** stormcentral's
-runner builds this image and pushes it to the test machine, then every run
-errors on its own `@@RESULT` parse before creating the Job (stormcentral#56;
-run a845a17d5c). Drift-heal is not among the suites: a test Job may not
+**Status, 2026-09-27: no suite has run on a cluster yet.** The first run
+(a845a17d5c) built and pushed the image, then errored on the runner's own
+`@@RESULT` parse before creating the Job (stormcentral#56; fixed in
+stormcentral, not yet exercised). The next (dcae784bb9) stopped earlier: the
+test machine's node registry (C2NR0Q2, sbregistry on :5100) refuses
+connections (stormcos#135, stormcentral#71). Drift-heal is not among the suites: a test Job may not
 touch `kube-system`, so where it is tested is an open decision (#19).
 
 ```
@@ -407,7 +411,7 @@ not do yet:
   golden render tests, no cluster.
 - `test/`: the suites' unit tests under `sc-build`; the image built and
   smoke-run with podman on dev.g8.lo, and built + pushed by stormcentral's
-  runner. Not yet run on a cluster (stormcentral#56).
+  runner. Not yet run on a cluster (stormcos#135, then stormcentral#56).
 - Drift-heal (reapply after a hand edit or deletion in `kube-system`) is
   covered by unit tests of `apply`/`reapable` only; no test exercises it on a
   running cluster (#19).
