@@ -102,6 +102,11 @@ object PUT.
   stormcos-cilium pin is v1.20.2, the stormcos edition preloads v1.20.1 —
   stormcos#133) P1; #12 envoy not reaped, #13 CRD never updated, #14 health
   rollup — P2; #8 (drift-heal test + must-gather), #15, #7 — P3.
+- Where the last session stopped (2026-09-27, restart): issue validation
+  pass done (all open issues still real, priorities confirmed); comment mining
+  filed nothing new; docs refreshed (94f9eeb). Next: when C2NR0Q2's
+  sbregistry answers on :5100 (stormcos#135), run `stormcentral test run
+  network-operator short`, then medium, for #16.
 - Owner decisions pending: #18 (a golden, or stay a preloaded container) P2;
   #19 (where drift-heal is tested — test Jobs may not touch kube-system) P3.
 
