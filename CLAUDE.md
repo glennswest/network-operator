@@ -84,21 +84,16 @@ object PUT.
 - [x] #11 presentation — `docs/presentation.md` (Marp, 11 slides), drawn
       from README; "where it sits" from `stormcentral check` (missing
       stormcos edge filed as stormcentral#52). Keep it in step with README.
-- [ ] #16 test containers (stormcentral docs/test-standard.md) — IN PROGRESS.
-      `test/`: own workspace crate `network-operator-test`, static musl,
-      `test/build.sh` stages `test/.stage/test`, `test/Containerfile` FROM
-      scratch; `/test short|medium|long`, `/test workload serve` is the pod
-      workload (same image). Plan:
-      short: Network `cluster` Available/not Degraded/observed current; a pod
-      gets an IP inside appliedClusterNetwork; pod→pod TCP; Service ClusterIP
-      (kube-proxy replacement) reachable. medium: + NetworkPolicy deny/allow,
-      Service follows scale 1→3 and pod loss, pod replaced gets new IP,
-      cross-node (≥2 nodes else skip), LoadBalancer IP when LB-IPAM on (else
-      skip), CiliumEndpoints gone after delete. long: waves of pods+Services
-      sized from node allocatable pods, per-wave ramp/reach latency and
-      residue (pods, CiliumEndpoints), trend vs wave 1.
-      Blocker: runner grants no cluster-scoped read (stormcentral#55) —
-      Network/nodes reads report `could not run` (exit 2) until it does.
+- [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
+      the first on-cluster run. Verified so far: 25 suite unit tests +
+      clippy under sc-build; image built and smoke-run with podman on dev;
+      stormcentral's runner built it (test/build.sh + podman build) and pushed
+      it to C2NR0Q2's registry (run a845a17d5c, 2a1232c). Blocked:
+      stormcentral#56 (every run errors on the runner's `@@RESULT` parse
+      before the Job starts). After it: `stormcentral test run
+      network-operator short` on C2NR0Q2, fix what it finds, then medium.
+      Expect exit 2 on the Network/nodes checks until stormcentral#55
+      (cluster-scoped read for test runs).
 - Open: #9 (render parity with the 18 objects stormcos ships, Cilium 1.20.1
   pin), #8 (QA tests + must-gather), #7 (release profile), #12–#15.
 
