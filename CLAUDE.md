@@ -13,6 +13,11 @@ The design and the mode table live in README.md — read it before changing
   (writes `deploy/crds/network.storm.io_networks.yaml` — never hand-edit it)
 - Accept an intended render change: `make golden`, then review the diff
 - Render without a cluster: `make dry-run FILE=examples/network-bgp.yaml`
+- On-cluster test container (`test/`, its own workspace + Cargo.lock):
+  `sc-build 'cd test && cargo test --locked && cargo clippy --locked --all-targets -- -D warnings'`;
+  image = `test/build.sh` then `podman build -f test/Containerfile .`;
+  run = `stormcentral test run network-operator short|medium|long --url http://stormcentral.g8.lo`.
+  What each suite checks: `test/README.md`.
 
 ## Layout
 

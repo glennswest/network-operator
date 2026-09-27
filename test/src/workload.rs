@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
-/// Serve until killed. Returns an exit code only if it cannot listen.
+/// Serve until SIGTERM (exit 0). Exits 2 if it cannot listen.
 pub async fn serve(port: u16) -> i32 {
     let name = std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".into());
     let listener = match TcpListener::bind(("0.0.0.0", port)).await {
@@ -20,8 +20,21 @@ pub async fn serve(port: u16) -> i32 {
         }
     };
     eprintln!("serving {name} on :{port}");
+    // As PID 1 there is no default SIGTERM action: exit on it explicitly, so
+    // a pod (or `podman stop`) ends at once instead of at the kill timeout.
+    let mut term = match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("SIGTERM handler: {e}");
+            return 2;
+        }
+    };
     loop {
-        let Ok((mut s, _)) = listener.accept().await else { continue };
+        let accepted = tokio::select! {
+            a = listener.accept() => a,
+            _ = term.recv() => return 0,
+        };
+        let Ok((mut s, _)) = accepted else { continue };
         let body = format!("{name}\n");
         tokio::spawn(async move {
             // Read the request head (bounded); a bare TCP check sends none.

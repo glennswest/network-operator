@@ -288,6 +288,26 @@ Make targets (run through `sc-build 'make …'` where they need cargo):
 | `make image` | `podman build` → `localhost/network-operator:<version>` |
 | `make packages` | `packaging/build-packages.sh`: `.rpm`, `.deb`, and the gzipped OCI archive, in `dist/` |
 
+### Tests on a running cluster (`test/`)
+
+The test container per stormcentral's test standard: one image,
+`/test short|medium|long`, run by stormcentral as a Job in its own namespace
+on each test machine. **short** (< 2 min) checks the `Network` is Available
+and current, and that a pod gets a pod-CIDR address, answers pod to pod and
+behind a ClusterIP Service. **medium** (< 30 min) adds the `status.applied*`
+baseline, Service scale-out and backend loss, NetworkPolicy deny/allow,
+cross-node, LoadBalancer IPAM and CiliumEndpoint cleanup. **long** runs
+overnight waves sized from node capacity and fails on slowdown or residue.
+Every test, its skips and what a run needs are in
+[`test/README.md`](test/README.md). Until stormcentral grants test runs the
+cluster-scoped read of `networks` and `nodes` (stormcentral#55), the tests
+that read them report *could not run* (exit 2).
+
+```
+sc-build 'cd test && cargo test --locked'                    # the suites' own unit tests
+stormcentral test run network-operator short --url http://stormcentral.g8.lo
+```
+
 ## How it ships
 
 - **Container image**: static musl binary on `scratch` (`Dockerfile`), built
@@ -369,6 +389,8 @@ not do yet:
 
 - `sc-build` on dev.g8.lo: `cargo build && cargo test` — unit tests plus the
   golden render tests, no cluster.
+- `test/`: the suites' unit tests under `sc-build`; the image built and
+  smoke-run with podman on dev.g8.lo. See `test/README.md` for on-cluster runs.
 - 2026-07-20, on rustkube v0.7.29 + fastetcd v1.0.4 + rustkube-node v0.2.0:
   an `overlay` install matching this render came fully up (agent
   `cilium status: OK`, BPF programs loaded, `CiliumNode` created, all pods

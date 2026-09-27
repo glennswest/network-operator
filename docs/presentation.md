@@ -176,7 +176,9 @@ agent 9879 `/healthz`, cilium-operator 9234 (loopback), envoy 9878 health /
 - **Updated**: Cilium by editing `spec.cilium.version`; the operator by loading
   a new archive and reapplying `deploy/operator.yaml` **and** `deploy/crds/`
   (the CRD is not self-updated — #13).
-- **Built and tested** with `sc-build` on the build box, never as root.
+- **Built and tested** with `sc-build` on the build box, never as root; on a
+  running cluster by the `test/` container (short / medium / long suites),
+  which stormcentral runs on every test machine.
 
 ---
 
@@ -208,6 +210,6 @@ Each is an open issue; the docs say so rather than promise it.
   - **#9 / stormcos#65** — stormcos pins Cilium 1.20.1, Envoy 1.37.5 and
     `ghcr…:0.2.3`; this repo defaults to 1.19.6 and ships
     `localhost/…:0.2.4`. A mismatch means a runtime pull on a node with no CNI.
-  - **#16** (P1) — short/medium/long test containers per the stormcos test
-    standard.
+  - **stormcentral#55** — test runs get no cluster-scoped read, so the
+    `test/` suites' `Network` checks report *could not run* until it lands.
   - **#8** QA tests + must-gather, **#7** release profile.

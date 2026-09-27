@@ -20,7 +20,7 @@ path = "src/main.rs"
 # `modes::resolve_network` + `immutable::applied_from`, so the test cannot
 # drift from the code it tests.
 network-operator = { path = ".." }
-tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "macros", "sync", "io-util"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "macros", "sync", "io-util", "signal"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 serde_json = "1"
 ipnet = "2"
