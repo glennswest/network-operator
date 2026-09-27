@@ -303,6 +303,12 @@ Every test, its skips and what a run needs are in
 cluster-scoped read of `networks` and `nodes` (stormcentral#55), the tests
 that read them report *could not run* (exit 2).
 
+**Status, 2026-09-27: no suite has run on a cluster yet.** stormcentral's
+runner builds this image and pushes it to the test machine, then every run
+errors on its own `@@RESULT` parse before creating the Job (stormcentral#56;
+run a845a17d5c). Drift-heal is not among the suites: a test Job may not
+touch `kube-system`, so where it is tested is an open decision (#19).
+
 ```
 sc-build 'cd test && cargo test --locked'                    # the suites' own unit tests
 stormcentral test run network-operator short --url http://stormcentral.g8.lo
@@ -345,13 +351,21 @@ stormcentral test run network-operator short --url http://stormcentral.g8.lo
   if absent — but it is how an existing CRD's schema gets updated.
 - **Golden / stormcos**: there is **no golden** for network-operator —
   stormcentral's component registry and stormcos `deploy/build-goldens.sh`
-  do not list it. stormcos's `kubernetes` edition declares it as a
-  `container` component with `run = "deployment"` and preloads its image
-  and the Cilium images it renders. The pins in that edition currently
-  disagree with this repo (it names `ghcr.io/glennswest/network-operator:0.2.3`,
-  Cilium `v1.20.1` and a `v1.37.5` Envoy); that is being reconciled in the
-  stormcos consistency pass and
-  [#9](https://github.com/glennswest/network-operator/issues/9).
+  do not list it. Whether it should get one is an owner decision,
+  [#18](https://github.com/glennswest/network-operator/issues/18).
+  stormcos's `kubernetes` edition declares it as a `container` component
+  with `run = "deployment"` and preloads its image and the Cilium images.
+  Three pin sources disagree today:
+
+  | | operator image | Cilium | Envoy |
+  |---|---|---|---|
+  | this repo (`src/modes.rs`, `deploy/operator.yaml`) | `localhost/network-operator:0.2.4` | `1.19.6` | `v1.36.9-1782267392-…` |
+  | stormcos `editions/kubernetes.toml` | `ghcr.io/glennswest/network-operator:0.2.3` | `v1.20.1` | `v1.37.5-1786810558-…` |
+  | stormcos-cilium `pinned.txt` (by digest) | — | `v1.20.2` | — |
+
+  This repo's side is [#9](https://github.com/glennswest/network-operator/issues/9);
+  stormcos's are stormcos#79 (the ghcr pin) and stormcos#133 (edition vs
+  stormcos-cilium).
 
 ## Relationship to the rest of the stack
 
@@ -360,7 +374,9 @@ stormcentral test run network-operator short --url http://stormcentral.g8.lo
 - **rustkube-node** — the kubelet that runs the Cilium pods (the agent's
   `startupProbe` depends on its probe support).
 - **stormcos-cilium** — pins the Cilium images (by digest) and chart that
-  stormcos ships; network-operator's defaults must match it (#9).
+  stormcos ships (v1.20.2 today); network-operator's defaults must match it (#9).
+- **stormcentral** — runs the `test/` suites on its test machines, and is
+  where a golden would be built if #18 decides for one.
 - **stormlb** — the pre-cluster apiserver VIP; a separate concern.
   stormlb fronts the apiserver, network-operator manages in-cluster
   networking.
@@ -390,7 +406,11 @@ not do yet:
 - `sc-build` on dev.g8.lo: `cargo build && cargo test` — unit tests plus the
   golden render tests, no cluster.
 - `test/`: the suites' unit tests under `sc-build`; the image built and
-  smoke-run with podman on dev.g8.lo. See `test/README.md` for on-cluster runs.
+  smoke-run with podman on dev.g8.lo, and built + pushed by stormcentral's
+  runner. Not yet run on a cluster (stormcentral#56).
+- Drift-heal (reapply after a hand edit or deletion in `kube-system`) is
+  covered by unit tests of `apply`/`reapable` only; no test exercises it on a
+  running cluster (#19).
 - 2026-07-20, on rustkube v0.7.29 + fastetcd v1.0.4 + rustkube-node v0.2.0:
   an `overlay` install matching this render came fully up (agent
   `cilium status: OK`, BPF programs loaded, `CiliumNode` created, all pods

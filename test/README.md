@@ -98,7 +98,8 @@ sc-build 'cd test && cargo test --locked && cargo clippy --locked --all-targets 
 sc-build 'test/build.sh'
 ```
 
-Run a suite on the test machines:
+Run a suite on the test machines (as of 2026-09-27 every run stops before
+the Job is created, on stormcentral#56):
 
 ```
 stormcentral test run network-operator short --url http://stormcentral.g8.lo

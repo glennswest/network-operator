@@ -167,7 +167,7 @@ agent 9879 `/healthz`, cilium-operator 9234 (loopback), envoy 9878 health /
   `localhost/network-operator:<version>`; preloaded on nodes, never pulled.
 - **Packages**: `.rpm` / `.deb` with the binary, `crdgen`, CRD, manifests,
   examples.
-- **Golden**: **none** — not in stormcentral's golden builds; stormcos's
+- **Golden**: **none** (whether it should get one: decision #18) — not in stormcentral's golden builds; stormcos's
   kubernetes edition carries it as a `container` component.
 - **Starts** from `deploy/operator.yaml`: 1-replica `Recreate` Deployment in
   `kube-system`, **hostNetwork**, control-plane nodes, `system-cluster-critical`
@@ -187,7 +187,7 @@ agent 9879 `/healthz`, cilium-operator 9234 (loopback), envoy 9878 health /
 Each is an open issue; the docs say so rather than promise it.
 
 - **#9** render parity with what stormcos ships: Hubble relay,
-  TLS-interception RBAC, `cilium-secrets` namespace; Cilium 1.20.1 pin.
+  TLS-interception RBAC, `cilium-secrets` namespace; the stormcos-cilium pin (v1.20.2, by digest).
 - **#12** turning Envoy off should delete the `cilium-envoy` objects.
 - **#13** the operator should update its CRD schema on upgrade.
 - **#14** `Available` should include `CiliumNode` readiness, CRD
@@ -207,9 +207,12 @@ Each is an open issue; the docs say so rather than promise it.
   rustkube-node v0.2.0 — an `overlay` install came fully up (agent OK, BPF
   loaded, `CiliumNode` created, pods Running first try).
 - **Most pressing**:
-  - **#9 / stormcos#65** — stormcos pins Cilium 1.20.1, Envoy 1.37.5 and
-    `ghcr…:0.2.3`; this repo defaults to 1.19.6 and ships
-    `localhost/…:0.2.4`. A mismatch means a runtime pull on a node with no CNI.
-  - **stormcentral#55** — test runs get no cluster-scoped read, so the
-    `test/` suites' `Network` checks report *could not run* until it lands.
+  - **#9 / stormcos#79 / stormcos#133** — three pin sources: this repo
+    renders 1.19.6 and ships `localhost/…:0.2.4`; the stormcos edition preloads
+    Cilium 1.20.1, Envoy 1.37.5 and `ghcr…:0.2.3`; stormcos-cilium pins 1.20.2.
+    A mismatch means a runtime pull on a node with no CNI.
+  - **stormcentral#56 / #55** — the `test/` suites are built and pushed but
+    no run reaches a cluster yet (#56); once they do, the `Network` checks
+    report *could not run* until test runs get cluster-scoped read (#55).
+  - **Decisions**: #18 (a golden or not), #19 (where drift-heal is tested).
   - **#8** QA tests + must-gather, **#7** release profile.

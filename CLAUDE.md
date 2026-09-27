@@ -94,11 +94,18 @@ object PUT.
       network-operator short` on C2NR0Q2, fix what it finds, then medium.
       Expect exit 2 on the Network/nodes checks until stormcentral#55
       (cluster-scoped read for test runs).
-- Open: #9 (render parity with the 18 objects stormcos ships, Cilium 1.20.1
-  pin), #8 (QA tests + must-gather), #7 (release profile), #12–#15.
+- Open: #9 (render parity with the 18 objects stormcos ships; the
+  stormcos-cilium pin is v1.20.2, the stormcos edition preloads v1.20.1 —
+  stormcos#133) P1; #12 envoy not reaped, #13 CRD never updated, #14 health
+  rollup — P2; #8 (drift-heal test + must-gather), #15, #7 — P3.
+- Owner decisions pending: #18 (a golden, or stay a preloaded container) P2;
+  #19 (where drift-heal is tested — test Jobs may not touch kube-system) P3.
 
 ## Status
 
 Renders, applies, drift-heals and reports on Cilium for all five modes plus
-the optional standalone Envoy. Not shipped as a golden; the image is an OCI
-archive on each release, preloaded by stormcos.
+the optional standalone Envoy. Not shipped as a golden (#18); the image is an
+OCI archive on each release, preloaded by stormcos. Docs last refreshed from
+the code 2026-09-27; operator code unchanged since v0.2.4 (only `test/` and
+docs since). `test/` suites built and pushed by stormcentral, never yet run
+on a cluster (stormcentral#56).

@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### 2026-09-27 (docs refresh)
+- **docs:** README "How it ships" now tabulates the three disagreeing pin
+  sources (this repo 1.19.6 / `localhost/…:0.2.4`, the stormcos edition
+  1.20.1 / `ghcr…:0.2.3`, stormcos-cilium 1.20.2 by digest) with their issues
+  (#9, stormcos#79, stormcos#133), and links the golden decision (#18).
+- **docs:** README, `test/README.md` and CLAUDE.md say the `test/` suites have
+  not yet run on a cluster (stormcentral#56) and that drift-heal is untested
+  on a live cluster (#19); stormcentral added to the relationships.
+- **docs:** deck status/planned slides updated to the same pins and
+  decisions; CLAUDE.md open issues carry their priorities.
+
 ### 2026-09-27 (#16)
 - **test:** `test/` — the on-cluster test container per stormcentral's test
   standard: one static scratch image, `/test short|medium|long`, JSON-lines
