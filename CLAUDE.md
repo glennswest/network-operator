@@ -79,6 +79,21 @@ object PUT.
 - [x] #11 presentation — `docs/presentation.md` (Marp, 11 slides), drawn
       from README; "where it sits" from `stormcentral check` (missing
       stormcos edge filed as stormcentral#52). Keep it in step with README.
+- [ ] #16 test containers (stormcentral docs/test-standard.md) — IN PROGRESS.
+      `test/`: own workspace crate `network-operator-test`, static musl,
+      `test/build.sh` stages `test/.stage/test`, `test/Containerfile` FROM
+      scratch; `/test short|medium|long`, `/test workload serve` is the pod
+      workload (same image). Plan:
+      short: Network `cluster` Available/not Degraded/observed current; a pod
+      gets an IP inside appliedClusterNetwork; pod→pod TCP; Service ClusterIP
+      (kube-proxy replacement) reachable. medium: + NetworkPolicy deny/allow,
+      Service follows scale 1→3 and pod loss, pod replaced gets new IP,
+      cross-node (≥2 nodes else skip), LoadBalancer IP when LB-IPAM on (else
+      skip), CiliumEndpoints gone after delete. long: waves of pods+Services
+      sized from node allocatable pods, per-wave ramp/reach latency and
+      residue (pods, CiliumEndpoints), trend vs wave 1.
+      Blocker: runner grants no cluster-scoped read (stormcentral#55) —
+      Network/nodes reads report `could not run` (exit 2) until it does.
 - Open: #9 (render parity with the 18 objects stormcos ships, Cilium 1.20.1
   pin), #8 (QA tests + must-gather), #7 (release profile), #12–#15.
 
