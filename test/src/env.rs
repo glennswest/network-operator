@@ -1,4 +1,5 @@
 //! What the runner hands the container (stormcentral `docs/test-standard.md`).
+//! `STORM_NODE` is not read: everything here goes through the API.
 
 use std::time::{Duration, Instant};
 
@@ -12,9 +13,6 @@ pub struct Env {
     pub namespace: String,
     /// `STORM_API`: the apiserver.
     pub api: String,
-    /// `STORM_NODE`: the node under test (informational; everything here goes
-    /// through the API).
-    pub node: String,
     /// This pod's name (`HOSTNAME`, which the kubelet sets to it).
     pub pod: String,
     pub token: Option<String>,
@@ -37,7 +35,6 @@ impl Env {
             run_id: var("STORM_RUN_ID").unwrap_or_default(),
             namespace: var("STORM_NAMESPACE").or_else(|| sa("namespace")).unwrap_or_default(),
             api: var("STORM_API").unwrap_or_default(),
-            node: var("STORM_NODE").unwrap_or_default(),
             pod: var("HOSTNAME").unwrap_or_default(),
             token: sa("token"),
             ca: std::fs::read(format!("{SA_DIR}/ca.crt")).ok(),
@@ -95,7 +92,6 @@ pub fn fake(run_id: &str) -> Env {
         run_id: run_id.into(),
         namespace: "test-network-operator-short-r1".into(),
         api: "https://127.0.0.1:6443".into(),
-        node: "127.0.0.1".into(),
         pod: "test-abc".into(),
         token: None,
         ca: None,
