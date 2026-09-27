@@ -88,9 +88,10 @@ object PUT.
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
       stormcentral's runner built it (test/build.sh + podman build) and pushed
-      it to C2NR0Q2's registry (run a845a17d5c, 2a1232c). Blocked:
-      stormcentral#56 (every run errors on the runner's `@@RESULT` parse
-      before the Job starts). After it: `stormcentral test run
+      it to C2NR0Q2's registry (run a845a17d5c, 2a1232c). stormcentral#56
+      (`@@RESULT` parse) is fixed in stormcentral 15:07 2026-09-27; the next
+      run (dcae784bb9, 9998abd) got past it but C2NR0Q2's sbregistry (:5100)
+      refused connections (apiserver /readyz 200). After it: `stormcentral test run
       network-operator short` on C2NR0Q2, fix what it finds, then medium.
       Expect exit 2 on the Network/nodes checks until stormcentral#55
       (cluster-scoped read for test runs).
