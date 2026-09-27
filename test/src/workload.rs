@@ -63,13 +63,12 @@ pub async fn probe(addr: SocketAddr, timeout: Duration) -> Result<(String, Durat
 /// Probe until the answer satisfies `want`, or `deadline`. Returns the last
 /// answer that did, or the last error.
 pub async fn probe_until(addr: SocketAddr, deadline: Instant, want: impl Fn(&str) -> bool) -> Result<(String, Duration), String> {
-    let mut last = String::from("never probed");
     loop {
-        match probe(addr, Duration::from_secs(3)).await {
+        let last = match probe(addr, Duration::from_secs(3)).await {
             Ok((n, d)) if want(&n) => return Ok((n, d)),
-            Ok((n, _)) => last = format!("{addr} answered {n:?}"),
-            Err(e) => last = e,
-        }
+            Ok((n, _)) => format!("{addr} answered {n:?}"),
+            Err(e) => e,
+        };
         if Instant::now() >= deadline {
             return Err(last);
         }
@@ -82,7 +81,7 @@ pub fn parse(raw: &[u8]) -> Result<String, String> {
     let text = String::from_utf8_lossy(raw);
     let (head, body) = text.split_once("\r\n\r\n").ok_or("no HTTP reply")?;
     let status = head.lines().next().unwrap_or("");
-    if !status.split_whitespace().nth(1).is_some_and(|c| c == "200") {
+    if status.split_whitespace().nth(1) != Some("200") {
         return Err(format!("status {status:?}"));
     }
     Ok(body.trim().to_string())
