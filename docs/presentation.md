@@ -217,4 +217,4 @@ Each is an open issue; the docs say so rather than promise it.
     unexercised. Then the `Network` checks report *could not run* until test
     runs get cluster-scoped read (#55).
   - **Decisions**: #18 (a golden or not), #19 (where drift-heal is tested).
-  - **#8** QA tests + must-gather, **#7** release profile.
+  - **#8** QA tests + must-gather (collector: stormcos_qa#22), **#7** release profile.

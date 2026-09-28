@@ -101,10 +101,13 @@ object PUT.
 - Open: #9 (render parity with the 18 objects stormcos ships; the
   stormcos-cilium pin is v1.20.2, the stormcos edition preloads v1.20.1 —
   stormcos#133) P1; #12 envoy not reaped, #13 CRD never updated, #14 health
-  rollup — P2; #8 (drift-heal test + must-gather), #15, #7 — P3.
-- Where the last session stopped (2026-09-27, restart): issue validation
-  pass done (all open issues still real, priorities confirmed); comment mining
-  filed nothing new; docs refreshed (94f9eeb). Next: when C2NR0Q2's
+  rollup — P2; #8 (drift-heal test + must-gather; collector filed as
+  stormcos_qa#22), #15, #7 — P3. #9 also carries the envoy tag mismatch
+  (1.36.9 here vs 1.37.5 in the stormcos edition; stormcos-cilium pins no envoy).
+- Where the last session stopped (2026-09-27): issue validation pass done
+  (all open issues still real, priorities confirmed); comment mining filed
+  stormcos_qa#22 and added the envoy pin to #9; docs re-verified against the
+  code (second pass: test/README env table). Next: when C2NR0Q2's
   sbregistry answers on :5100 (stormcos#135), run `stormcentral test run
   network-operator short`, then medium, for #16.
 - Owner decisions pending: #18 (a golden, or stay a preloaded container) P2;

@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### 2026-09-27 (docs refresh, second pass)
+- **docs:** re-verified README, `test/README.md`, the deck and CLAUDE.md
+  against the code (operator unchanged since v0.2.4; `test/` unchanged since
+  2a1232c). Nothing the docs promise is missing beyond #12–#15 and #9.
+- **docs:** `test/README.md` documents the container's environment
+  (`STORM_API`, `STORM_NAMESPACE`, `STORM_RUN_ID`, `STORM_SUITE`,
+  `STORM_TIMEOUT` and their defaults, from `test/src/env.rs`) and long's 8 h
+  default budget.
+- **docs:** README, deck and CLAUDE.md link the must-gather network collector
+  (stormcos_qa#22, from #8) and note that stormcos-cilium pins no
+  `cilium-envoy` image (#9).
+
 ### 2026-09-27 (docs refresh)
 - **docs:** re-verified README, `test/README.md`, the deck and CLAUDE.md
   against the code (operator unchanged since v0.2.4). README lists the

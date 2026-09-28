@@ -17,7 +17,7 @@ server that answers with its own pod name), so nothing else is pulled.
 |---|---|---|
 | `short` | < 2 min | `network-status`, `pod-ip`, `pod-to-pod`, `service`, `cleanup` |
 | `medium` | < 30 min | everything in short, then `network-config`, `service-scale`, `backend-loss`, `network-policy`, `cross-node`, `load-balancer`, `endpoints-reaped`, `cleanup-all` |
-| `long` | the night window | `network-status`, `capacity`, `wave-1` … `wave-N`, `trend`, `vm-waves` (skip), `network-status-end`, `cleanup` |
+| `long` | the night window (8 h unless `STORM_TIMEOUT`) | `network-status`, `capacity`, `wave-1` … `wave-N`, `trend`, `vm-waves` (skip), `network-status-end`, `cleanup` |
 
 - **network-status**: the `Network` (named `cluster`, else the only one)
   has `Available=True`, `Degraded` not `True`, and `observedGeneration`
@@ -79,6 +79,22 @@ this component's to test.
   **2**, never a pass. The pod tests still run. In long, the waves then
   use a fixed 20 pods.
 - No privileges, no host access, no fixed node, device or core count.
+
+### Environment (`src/env.rs`)
+
+| variable | default | |
+|---|---|---|
+| `STORM_API` | — (**required**) | the apiserver URL |
+| `STORM_NAMESPACE` | the ServiceAccount's `namespace` file | where everything the run creates goes (**required** if neither is set) |
+| `STORM_RUN_ID` | — (**required**) | the `storm.io/test-run` label value |
+| `STORM_SUITE` | `short` | used when no suite is given on the command line |
+| `STORM_TIMEOUT` | 120 s short, 1800 s medium, 8 h long | seconds; waits are cut to what is left of it |
+| `HOSTNAME` | — | this pod's name (set by the kubelet) |
+
+The token and CA come from the mounted ServiceAccount
+(`/var/run/secrets/kubernetes.io/serviceaccount`). `STORM_NODE` is not read:
+everything goes through the API. A missing required variable is reported and
+the run exits **2**.
 
 ## Output
 

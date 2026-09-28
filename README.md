@@ -367,6 +367,8 @@ stormcentral test run network-operator short --url http://stormcentral.g8.lo
   | stormcos `editions/kubernetes.toml` | `ghcr.io/glennswest/network-operator:0.2.3` | `v1.20.1` | `v1.37.5-1786810558-…` |
   | stormcos-cilium `pinned.txt` (by digest) | — | `v1.20.2` | — |
 
+  stormcos-cilium pins no `cilium-envoy` image, so there is no digest for
+  the Envoy default to follow yet (noted on #9).
   This repo's side is [#9](https://github.com/glennswest/network-operator/issues/9);
   stormcos's are stormcos#79 (the ghcr pin) and stormcos#133 (edition vs
   stormcos-cilium).
@@ -415,6 +417,8 @@ not do yet:
 - Drift-heal (reapply after a hand edit or deletion in `kube-system`) is
   covered by unit tests of `apply`/`reapable` only; no test exercises it on a
   running cluster (#19).
+- Must-gather: stormcos_qa has no network collector yet (stormcos_qa#22,
+  from #8).
 - 2026-07-20, on rustkube v0.7.29 + fastetcd v1.0.4 + rustkube-node v0.2.0:
   an `overlay` install matching this render came fully up (agent
   `cilium status: OK`, BPF programs loaded, `CiliumNode` created, all pods
