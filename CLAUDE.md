@@ -96,7 +96,7 @@ object PUT.
       later, every component's runs hit it). stormcos#135 /
       stormcentral#71 cleared 2026-09-28 (C2NR0Q2 on 11.51, :5100 answers);
       stormcentral's own run fe3fc66b32 then failed the image push (broken
-      pipe mid-blob, stormcentral#56). Next: `stormcentral test run
+      pipe mid-blob), fixed in stormblock-registry v0.24.1 (#56 there). Next: `stormcentral test run
       network-operator short` on C2NR0Q2, fix what it finds, then medium.
       Expect exit 2 on the Network/nodes checks until stormcentral#55
       (cluster-scoped read for test runs).
@@ -105,7 +105,8 @@ object PUT.
   stormcos#133) P1; #12 envoy not reaped, #13 CRD never updated, #14 health
   rollup — P2; #8 (drift-heal test + must-gather; collector filed as
   stormcos_qa#22), #15, #7 — P3. #9 also carries the envoy tag mismatch
-  (1.36.9 here vs 1.37.5 in the stormcos edition; stormcos-cilium pins no envoy).
+  (1.36.9 here vs 1.37.5 in the stormcos edition; stormcos-cilium runs Envoy
+  in the agent, so pins none — the unused edition preload is stormcos#153).
 - Where the last session stopped (2026-09-27): issue validation pass done
   (all open issues still real, priorities confirmed); comment mining filed
   stormcos_qa#22 and added the envoy pin to #9; docs re-verified against the
