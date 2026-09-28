@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-09-28
+- **docs:** CLAUDE.md #16 blocker updated — C2NR0Q2's registry answers again; the next known fault is the image push (stormcentral#56).
+
 ### 2026-09-27 (docs refresh, second pass)
 - **docs:** re-verified README, `test/README.md`, the deck and CLAUDE.md
   against the code (operator unchanged since v0.2.4; `test/` unchanged since

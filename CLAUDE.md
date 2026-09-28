@@ -93,8 +93,10 @@ object PUT.
       not yet exercised: the next run (dcae784bb9, 9998abd) stopped earlier,
       at the image lookup, because C2NR0Q2's sbregistry (:5100) refused
       connections (apiserver /readyz 200; still refused 10 min
-      later, every component's runs hit it). Blocked: stormcos#135 /
-      stormcentral#71 (node sbregistry not listening). After it: `stormcentral test run
+      later, every component's runs hit it). stormcos#135 /
+      stormcentral#71 cleared 2026-09-28 (C2NR0Q2 on 11.51, :5100 answers);
+      stormcentral's own run fe3fc66b32 then failed the image push (broken
+      pipe mid-blob, stormcentral#56). Next: `stormcentral test run
       network-operator short` on C2NR0Q2, fix what it finds, then medium.
       Expect exit 2 on the Network/nodes checks until stormcentral#55
       (cluster-scoped read for test runs).
@@ -107,9 +109,9 @@ object PUT.
 - Where the last session stopped (2026-09-27): issue validation pass done
   (all open issues still real, priorities confirmed); comment mining filed
   stormcos_qa#22 and added the envoy pin to #9; docs re-verified against the
-  code (second pass: test/README env table). Next: when C2NR0Q2's
-  sbregistry answers on :5100 (stormcos#135), run `stormcentral test run
-  network-operator short`, then medium, for #16.
+  code (second pass: test/README env table). Second validation pass
+  2026-09-28: unchanged; #16 status posted. Next: run `stormcentral test run
+  network-operator short` (registry is back), then medium, for #16.
 - Owner decisions pending: #18 (a golden, or stay a preloaded container) P2;
   #19 (where drift-heal is tested — test Jobs may not touch kube-system) P3.
 
