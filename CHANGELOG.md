@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-09-29
+- **docs:** CLAUDE.md — comment mining filed owner decision #20 (standalone cilium-envoy support and tag pin); #18/#19/#20 labelled `needs-owner`.
+
 ### 2026-09-28
 - **docs:** CLAUDE.md — the image-push fault is fixed in stormblock-registry v0.24.1; the cilium-envoy preload mismatch is filed as stormcos#153.
 - **docs:** CLAUDE.md #16 blocker updated — C2NR0Q2's registry answers again; the next known fault is the image push (stormcentral#56).

@@ -115,6 +115,8 @@ object PUT.
   network-operator short` (registry is back), then medium, for #16.
 - Owner decisions pending: #18 (a golden, or stay a preloaded container) P2;
   #19 (where drift-heal is tested — test Jobs may not touch kube-system) P3.
+  #20 (is standalone cilium-envoy supported on stormcos; where its tag is
+  pinned — pairs with stormcos#153) P3. All three carry `needs-owner`.
 
 ## Status
 
