@@ -41,9 +41,9 @@ The stack's analog of OpenShift's **CNO**. *Not* `cilium-operator` — it
 ## Where it sits in stormcos
 
 ```
-                 stormcos  (kubernetes edition ships it: run = "deployment")
-                     │
-                     ▼
+                 stormcos  (does NOT ship it: Cilium runs from static
+                            manifests rendered by stormcos-cilium)
+
             ┌──────────────────┐
             │ network-operator │   group: network
             └──────────────────┘
@@ -56,9 +56,11 @@ The stack's analog of OpenShift's **CNO**. *Not* `cilium-operator` — it
 
 - Depends on (`stormcentral check`): **rustkube**, **stormcos-cilium**.
 - Runs on nodes via **rustkube-node** (kubelet; agent `startupProbe`).
-- Depended on by **stormcos**: `editions/kubernetes.toml` declares it and
-  preloads its and Cilium's images. (stormcentral's graph misses this edge —
-  stormcentral#52.)
+- **Not shipped by stormcos**: the image has no network-operator member and
+  nothing preloads it; the old `editions/kubernetes.toml` entry is the
+  pre-pivot plan. stormcos ships the same Cilium objects (`DaemonSet/cilium`,
+  `cilium-operator`, `cilium-config`) as static manifests — so deploying the
+  operator on a stormcos node would fight them. Do not.
 - Not **stormlb**: that fronts the apiserver; this manages pod networking.
 
 ---
@@ -164,11 +166,12 @@ agent 9879 `/healthz`, cilium-operator 9234 (loopback), envoy 9878 health /
 
 - **Image**: static musl binary on `scratch`, built `--locked`. Distributed as
   a **gzipped OCI archive on each GitHub release** → `podman load` →
-  `localhost/network-operator:<version>`; preloaded on nodes, never pulled.
+  `localhost/network-operator:<version>`; must be preloaded (never pulled) —
+  nothing preloads it today.
 - **Packages**: `.rpm` / `.deb` with the binary, `crdgen`, CRD, manifests,
   examples.
-- **Golden**: **none** (whether it should get one: decision #18) — not in stormcentral's golden builds; stormcos's
-  kubernetes edition carries it as a `container` component.
+- **Golden**: **none** (whether it should get one: decision #18) — not in
+  stormcentral's golden builds, and not in the stormcos image.
 - **Starts** from `deploy/operator.yaml`: 1-replica `Recreate` Deployment in
   `kube-system`, **hostNetwork**, control-plane nodes, `system-cluster-critical`
   — so it runs on a node with no CNI and brings Cilium up underneath itself.
@@ -186,7 +189,7 @@ agent 9879 `/healthz`, cilium-operator 9234 (loopback), envoy 9878 health /
 
 Each is an open issue; the docs say so rather than promise it.
 
-- **#9** render parity with what stormcos ships: Hubble relay,
+- **#9** render parity with the Cilium manifests stormcos ships: Hubble relay,
   TLS-interception RBAC, `cilium-secrets` namespace; the stormcos-cilium pin (v1.20.2, by digest).
 - **#12** turning Envoy off should delete the `cilium-envoy` objects.
 - **#13** the operator should update its CRD schema on upgrade.
@@ -207,10 +210,10 @@ Each is an open issue; the docs say so rather than promise it.
   rustkube-node v0.2.0 — an `overlay` install came fully up (agent OK, BPF
   loaded, `CiliumNode` created, pods Running first try).
 - **Most pressing**:
-  - **#9 / stormcos#79 / stormcos#133** — three pin sources: this repo
-    renders 1.19.6 and ships `localhost/…:0.2.4`; the stormcos edition preloads
-    Cilium 1.20.1, Envoy 1.37.5 and `ghcr…:0.2.3`; stormcos-cilium pins 1.20.2.
-    A mismatch means a runtime pull on a node with no CNI.
+  - **#9** — this repo renders Cilium 1.19.6; stormcos-cilium (and so the
+    stormcos image's static manifests) pins 1.20.2, by digest.
+  - **#21** — stormcos does not ship this operator; it runs Cilium from
+    static manifests. The operator must not be deployed on a stormcos node.
   - **stormcos#135 / stormcentral#56 / #55** — the `test/` suites are built
     but no run reaches a cluster yet: the test machine's registry refuses
     connections (stormcos#135), and the runner's `@@RESULT` fix (#56) is

@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### 2026-10-06
+- **docs:** README, deck and CLAUDE.md no longer say stormcos ships or
+  preloads network-operator (#21). Verified against stormcos: no
+  network-operator in `deploy/image.toml`, `stormcos-compose` deleted,
+  `editions/kubernetes.toml` is the pre-pivot plan, and the image runs Cilium
+  from static manifests (stormcos-cilium's render, v1.20.2). README now warns
+  that those manifests own the same `kube-system` objects the operator
+  renders, so the operator must not be deployed on a stormcos node. The
+  edition-vs-repo pin table is reduced to this repo vs stormcos-cilium.
+
 ### 2026-09-29
 - **docs:** CLAUDE.md — comment mining filed owner decision #20 (standalone cilium-envoy support and tag pin); #18/#19/#20 labelled `needs-owner`.
 

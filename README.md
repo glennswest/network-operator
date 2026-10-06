@@ -76,8 +76,9 @@ the reconcile requeues in 10 s with `Progressing=True
 `tests/golden/*.yaml` holds the full render for each mode (plus
 `overlay-envoy`); those files are the exact object list per mode.
 
-Compared with what the stormcos image ships today, the render is missing
-Hubble relay and the TLS-interception RBAC / `cilium-secrets` namespace —
+Compared with the Cilium objects the stormcos image ships today (as static
+manifests, not through this operator — see [How it ships](#how-it-ships)),
+the render is missing Hubble relay and the TLS-interception RBAC / `cilium-secrets` namespace —
 tracked in [#9](https://github.com/glennswest/network-operator/issues/9).
 
 ## The `Network` custom resource
@@ -331,7 +332,8 @@ stormcentral test run network-operator short --url http://stormcentral.g8.lo
   ```
 
   `localhost/` is local-only to CRI-O, so nothing ever tries to pull it; the
-  image must be preloaded on every node that may run the operator. The
+  image must be preloaded on every node that may run the operator (nothing
+  preloads it today — stormcos does not; see below). The
   package build fails if `deploy/operator.yaml` and the archive disagree on
   the tag.
 - **`.rpm` / `.deb`** with the binary, `network-operator-crdgen`, the CRD,
@@ -357,21 +359,35 @@ stormcentral test run network-operator short --url http://stormcentral.g8.lo
   stormcentral's component registry and stormcos `deploy/build-goldens.sh`
   do not list it. Whether it should get one is an owner decision,
   [#18](https://github.com/glennswest/network-operator/issues/18).
-  stormcos's `kubernetes` edition declares it as a `container` component
-  with `run = "deployment"` and preloads its image and the Cilium images.
-  Three pin sources disagree today:
+  **stormcos does not ship, preload or run network-operator.** Its image
+  (`deploy/image.toml`) has no network-operator member, and the crate that
+  used to preload container images (`stormcos-compose`) was deleted
+  (stormcos#42). stormcos `editions/kubernetes.toml` still lists
+  network-operator, but that file is the pre-pivot plan, kept only for a CI
+  lint, and says it is not what the image carries.
 
-  | | operator image | Cilium | Envoy |
-  |---|---|---|---|
-  | this repo (`src/modes.rs`, `deploy/operator.yaml`) | `localhost/network-operator:0.2.4` | `1.19.6` | `v1.36.9-1782267392-…` |
-  | stormcos `editions/kubernetes.toml` | `ghcr.io/glennswest/network-operator:0.2.3` | `v1.20.1` | `v1.37.5-1786810558-…` |
-  | stormcos-cilium `pinned.txt` (by digest) | — | `v1.20.2` | — |
+  Instead a stormcos node runs Cilium from **static manifests**
+  (`deploy/manifests/10-cilium-namespace.yaml` … `70-cilium-operator.yaml`,
+  `75-hubble-relay.yaml`), byte-identical to stormcos-cilium's render and
+  shipped inside the apiserver golden, with Cilium goldens built from
+  `deploy/pinned-images.txt` (v1.20.2). There is no `Network` CR on a node.
 
-  stormcos-cilium pins no `cilium-envoy` image, so there is no digest for
-  the Envoy default to follow yet (noted on #9).
-  This repo's side is [#9](https://github.com/glennswest/network-operator/issues/9);
-  stormcos's are stormcos#79 (the ghcr pin) and stormcos#133 (edition vs
-  stormcos-cilium).
+  > **Do not deploy network-operator on a stormcos node.** Its render and
+  > the static manifests own the same objects — `DaemonSet/cilium`,
+  > `Deployment/cilium-operator` and `ConfigMap/cilium-config` in
+  > `kube-system` — so the two would overwrite each other on every
+  > reconcile.
+
+  Pins, for when the two are compared (#9):
+
+  | | Cilium | Envoy |
+  |---|---|---|
+  | this repo (`src/modes.rs`) | `1.19.6` | `v1.36.9-1782267392-…` |
+  | stormcos-cilium `pinned.txt` / stormcos `deploy/pinned-images.txt` (by digest) | `v1.20.2` | — |
+
+  stormcos-cilium runs Envoy inside the agent and pins no `cilium-envoy`
+  image, so there is no digest for the Envoy default to follow (noted on #9).
+  This repo's side is [#9](https://github.com/glennswest/network-operator/issues/9).
 
 ## Relationship to the rest of the stack
 
@@ -379,8 +395,12 @@ stormcentral test run network-operator short --url http://stormcentral.g8.lo
   Kubernetes API).
 - **rustkube-node** — the kubelet that runs the Cilium pods (the agent's
   `startupProbe` depends on its probe support).
-- **stormcos-cilium** — pins the Cilium images (by digest) and chart that
-  stormcos ships (v1.20.2 today); network-operator's defaults must match it (#9).
+- **stormcos-cilium** — pins the Cilium images (by digest) and renders the
+  manifests stormcos ships (v1.20.2 today); network-operator's defaults
+  should match it (#9).
+- **stormcos** — does **not** use network-operator: it ships Cilium as
+  static manifests rendered by stormcos-cilium (see
+  [How it ships](#how-it-ships)); the two must not run on the same cluster.
 - **stormcentral** — runs the `test/` suites on its test machines, and is
   where a golden would be built if #18 decides for one.
 - **stormlb** — the pre-cluster apiserver VIP; a separate concern.
@@ -405,7 +425,8 @@ not do yet:
 - Rendering is Rust code, not per-Cilium-version templates: `version` changes
   the image tags and the `cilium.io` API version, nothing else. Config keys
   that a newer Cilium renamed are not tracked (#9).
-- Render parity with what stormcos ships (Hubble, TLS interception): #9.
+- Render parity with the Cilium objects stormcos ships as static manifests
+  (Hubble, TLS interception): #9.
 
 ## Validation
 

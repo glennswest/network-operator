@@ -107,13 +107,15 @@ object PUT.
       network-operator short` on C2NR0Q2, fix what it finds, then medium.
       Expect exit 2 on the Network/nodes checks until stormcentral#55
       (cluster-scoped read for test runs).
-- Open: #9 (render parity with the 18 objects stormcos ships; the
-  stormcos-cilium pin is v1.20.2, the stormcos edition preloads v1.20.1 —
-  stormcos#133) P1; #12 envoy not reaped, #13 CRD never updated, #14 health
+- Open: #9 (render parity with the 18 Cilium objects stormcos ships as
+  static manifests; the stormcos-cilium pin is v1.20.2) P1; #12 envoy not reaped, #13 CRD never updated, #14 health
   rollup — P2; #8 (drift-heal test + must-gather; collector filed as
   stormcos_qa#22), #15, #7 — P3. #9 also carries the envoy tag mismatch
-  (1.36.9 here vs 1.37.5 in the stormcos edition; stormcos-cilium runs Envoy
-  in the agent, so pins none — the unused edition preload is stormcos#153).
+  (1.36.9 here; stormcos-cilium runs Envoy in the agent, so pins none).
+  stormcos does NOT ship or preload this operator (#21): its
+  `editions/kubernetes.toml` is the pre-pivot plan, not the image; the image
+  runs Cilium from static manifests with the same kube-system object names
+  we render, so the two must never run on one cluster.
 - Where the last session stopped (2026-09-27): issue validation pass done
   (all open issues still real, priorities confirmed); comment mining filed
   stormcos_qa#22 and added the envoy pin to #9; docs re-verified against the
@@ -129,7 +131,8 @@ object PUT.
 
 Renders, applies, drift-heals and reports on Cilium for all five modes plus
 the optional standalone Envoy. Not shipped as a golden (#18); the image is an
-OCI archive on each release, preloaded by stormcos. Docs last refreshed from
+OCI archive on each release; nothing preloads it (stormcos does not ship
+it — it runs Cilium from static manifests, #21). Docs last refreshed from
 the code 2026-09-27; operator code unchanged since v0.2.4 (only `test/` and
 docs since). `test/` suites built and pushed by stormcentral, never yet run
 on a cluster (stormcos#135, then stormcentral#56).
