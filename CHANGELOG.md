@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-06
+- **docs:** #19 narrowed to an owner decision between a disruptive kube-system test class and unit-only coverage (stormcos_qa#14 rules out qa-runner); labelled `needs-owner`.
 - **build:** `[profile.release]` completed (#7): `opt-level = 3`,
   `codegen-units = 1` and `strip = "debuginfo"` join `lto = "thin"`, so the
   release binary no longer ships debuginfo; symbols stay, so panics from the
@@ -97,6 +98,7 @@
   as owner decision #23.
 
 ### 2026-10-06
+- **docs:** #19 narrowed to an owner decision between a disruptive kube-system test class and unit-only coverage (stormcos_qa#14 rules out qa-runner); labelled `needs-owner`.
 - **docs:** README, deck and CLAUDE.md no longer say stormcos ships or
   preloads network-operator (#21). Verified against stormcos: no
   network-operator in `deploy/image.toml`, `stormcos-compose` deleted,

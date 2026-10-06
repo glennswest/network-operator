@@ -178,7 +178,10 @@ until `deploy/crds/` matches).
   2026-09-28: unchanged; #16 status posted. Next: run `stormcentral test run
   network-operator short` (registry is back), then medium, for #16.
 - Owner decisions pending: #18 (a golden, or stay a preloaded container) P2;
-  #19 (where drift-heal is tested — test Jobs may not touch kube-system) P3.
+  #19 (where drift-heal is tested — test Jobs may not touch kube-system) P3;
+  2026-10-06 narrowed to option 1 (opt-in disruptive kube-system test in the
+  standard) vs 3 (unit tests only) — qa-runner ruled out by stormcos_qa#14's
+  answer (qa tests run in a test container too); now `needs-owner`.
   #20 (is standalone cilium-envoy supported on stormcos; where its tag is
   pinned — pairs with stormcos#153) P3. #24 (validating webhook: cert
   source, url vs service, failurePolicy) P3, `needs-owner`. #23 (k8sServiceHost: kubelet-
