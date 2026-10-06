@@ -19,6 +19,8 @@ use crate::modes::{EffectiveConfig, NAMESPACE};
 mod agent;
 mod config;
 mod envoy;
+
+pub use envoy::ENVOY_DS;
 mod hubble;
 mod lb;
 mod operator;

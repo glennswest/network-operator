@@ -96,7 +96,9 @@ async fn reconcile(net: Arc<Network>, ctx: Arc<Context>) -> Result<Action, Error
         Err(e) => {
             // A spec we cannot resolve is a user error, not a transient one:
             // record it and stop rather than hot-looping on it.
-            report_failure(&ctx, &name, &previous, generation, &e.to_string()).await?;
+            // The spec did not resolve, so whether envoy is wanted is unknown;
+            // leave it out of the rollup rather than guess.
+            report_failure(&ctx, &name, &previous, generation, false, &e.to_string()).await?;
             return Err(Error::Invalid(e));
         }
     };
@@ -109,7 +111,7 @@ async fn reconcile(net: Arc<Network>, ctx: Arc<Context>) -> Result<Action, Error
             .map(|v| v.to_string())
             .collect::<Vec<_>>()
             .join("; ");
-        report_failure(&ctx, &name, &previous, generation, &message).await?;
+        report_failure(&ctx, &name, &previous, generation, cfg.envoy, &message).await?;
         return Err(Error::Immutable(message));
     }
 
@@ -118,7 +120,7 @@ async fn reconcile(net: Arc<Network>, ctx: Arc<Context>) -> Result<Action, Error
     let deferred = match apply::apply_all(&ctx.client, &objects).await {
         Ok(deferred) => deferred,
         Err(e) => {
-            report_failure(&ctx, &name, &previous, generation, &e.to_string()).await?;
+            report_failure(&ctx, &name, &previous, generation, cfg.envoy, &e.to_string()).await?;
             return Err(Error::Apply(e));
         }
     };
@@ -127,7 +129,7 @@ async fn reconcile(net: Arc<Network>, ctx: Arc<Context>) -> Result<Action, Error
     reap(&ctx, &cfg, &objects).await?;
 
     // 5. observe and report
-    let snapshot = health::observe(&ctx.client, deferred.clone()).await?;
+    let snapshot = health::observe(&ctx.client, deferred.clone(), cfg.envoy).await?;
 
     let mut next = previous.clone();
     next.conditions = health::conditions(&previous.conditions, &snapshot, generation, &now());
@@ -162,12 +164,13 @@ async fn report_failure(
     name: &str,
     previous: &NetworkStatus,
     generation: i64,
+    envoy: bool,
     message: &str,
 ) -> Result<(), Error> {
     error!(network = %name, %message, "reconcile failed");
     // Still report on whatever is running — a bad spec edit does not stop the
     // installed dataplane, and Available should keep saying so.
-    let mut snapshot = health::observe(&ctx.client, Vec::new())
+    let mut snapshot = health::observe(&ctx.client, Vec::new(), envoy)
         .await
         .unwrap_or_default();
     snapshot.failure = Some(message.to_string());
