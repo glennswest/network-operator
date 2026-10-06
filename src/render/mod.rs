@@ -102,12 +102,12 @@ pub fn render(cfg: &EffectiveConfig) -> Vec<Rendered> {
 ///
 /// Only the conditional objects need listing — the RBAC, config and workloads
 /// are rendered unconditionally and are garbage-collected with the `Network`.
-/// That is the Hubble relay and Services and the LB/L2/BGP CRs; the conditional
+/// That is the Hubble relay, the agent's Services and the LB/L2/BGP CRs; the conditional
 /// `cilium-envoy` objects are not listed yet, so disabling Envoy leaves them in
 /// place (#12).
 pub fn reapable(cfg: &EffectiveConfig) -> Vec<Rendered> {
     let mut out = hubble::all(cfg);
-    out.extend(services::hubble(cfg));
+    out.extend(services::all(cfg));
     out.extend(lb::all_variants(cfg));
     out
 }

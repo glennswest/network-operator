@@ -3,7 +3,9 @@
 //!
 //! All three select the agent's pods (`k8s-app: cilium`) and target its named
 //! ports (agent.rs), the way the upstream chart does. The Hubble two exist only
-//! while Hubble is on and are reaped when it is turned off.
+//! while Hubble is on; `cilium-agent` (the embedded proxy's metrics) only while
+//! Envoy is not split out, since `cilium-envoy` then has its own Service. Each
+//! is reaped when its condition goes away.
 
 use k8s_openapi::api::core::v1::{Service, ServicePort, ServiceSpec};
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
@@ -18,16 +20,19 @@ pub const HUBBLE_METRICS: &str = "hubble-metrics";
 pub const HUBBLE_PEER: &str = "hubble-peer";
 
 pub fn render(cfg: &EffectiveConfig) -> Vec<Rendered> {
-    let mut out = vec![agent_metrics(cfg)];
+    let mut out = Vec::new();
+    if !cfg.envoy {
+        out.push(agent_metrics(cfg));
+    }
     if cfg.hubble {
         out.extend(hubble(cfg));
     }
     out
 }
 
-/// The Hubble Services, rendered or not. For [`super::reapable`].
-pub fn hubble(cfg: &EffectiveConfig) -> Vec<Rendered> {
-    vec![hubble_metrics(cfg), hubble_peer(cfg)]
+/// Every Service here, rendered or not. For [`super::reapable`].
+pub fn all(cfg: &EffectiveConfig) -> Vec<Rendered> {
+    vec![agent_metrics(cfg), hubble_metrics(cfg), hubble_peer(cfg)]
 }
 
 fn selector() -> Option<BTreeMap<String, String>> {
@@ -123,6 +128,22 @@ mod tests {
         );
         cfg.hubble = false;
         assert_eq!(ids(&cfg), vec!["Service/kube-system/cilium-agent"]);
+    }
+
+    /// A standalone cilium-envoy binds the proxy-metrics host port itself; the
+    /// agent declaring it too would make the two pods unschedulable together.
+    #[test]
+    fn standalone_envoy_takes_the_proxy_metrics_port_from_the_agent() {
+        let mut cfg = cfg_for(Mode::Overlay);
+        cfg.envoy = true;
+        assert!(!ids(&cfg).contains(&"Service/kube-system/cilium-agent".to_string()));
+        assert!(!super::super::config::data(&cfg).contains_key("proxy-prometheus-port"));
+
+        let ds = super::super::agent::render(&cfg);
+        let ds: k8s_openapi::api::apps::v1::DaemonSet =
+            serde_json::from_value(serde_json::to_value(&ds.obj).unwrap()).unwrap();
+        let ports = ds.spec.unwrap().template.spec.unwrap().containers[0].ports.clone().unwrap();
+        assert!(!ports.iter().any(|p| p.host_port == Some(ENVOY_METRICS_PORT)));
     }
 
     /// A named targetPort that no container declares routes nowhere.

@@ -153,7 +153,11 @@ pub fn data(cfg: &EffectiveConfig) -> BTreeMap<String, String> {
     set("enable-metrics", "true");
     set("prometheus-serve-addr", &format!(":{AGENT_PROMETHEUS_PORT}"));
     set("operator-prometheus-serve-addr", &format!(":{OPERATOR_PROMETHEUS_PORT}"));
-    set("proxy-prometheus-port", &ENVOY_METRICS_PORT.to_string());
+    // The embedded proxy's metrics; a standalone cilium-envoy serves its own
+    // on the same port (envoy.rs), so the agent must not also bind it.
+    if !cfg.envoy {
+        set("proxy-prometheus-port", &ENVOY_METRICS_PORT.to_string());
+    }
 
     // --- Hubble ---
     set("enable-hubble", bool_str(cfg.hubble));

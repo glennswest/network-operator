@@ -160,14 +160,18 @@ fn agent_container(cfg: &EffectiveConfig) -> Container {
 }
 
 /// Named so the Services in `services.rs` can target them by name, as the
-/// upstream chart does. The Hubble ports exist only while Hubble is on.
+/// upstream chart does. The Hubble ports exist only while Hubble is on, and
+/// the proxy's metrics port only while the proxy is embedded: a standalone
+/// `cilium-envoy` serves that port itself, on the same host.
 fn agent_ports(cfg: &EffectiveConfig) -> Vec<ContainerPort> {
     let mut p = vec![host_port("health", AGENT_HEALTH_PORT)];
     if cfg.hubble {
         p.push(host_port("peer-service", HUBBLE_PEER_PORT));
     }
     p.push(host_port("prometheus", AGENT_PROMETHEUS_PORT));
-    p.push(host_port("envoy-metrics", ENVOY_METRICS_PORT));
+    if !cfg.envoy {
+        p.push(host_port("envoy-metrics", ENVOY_METRICS_PORT));
+    }
     if cfg.hubble {
         p.push(host_port("hubble-metrics", HUBBLE_METRICS_PORT));
     }
