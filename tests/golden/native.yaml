@@ -1,5 +1,14 @@
 ---
 apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: network-operator
+    app.kubernetes.io/part-of: cilium
+    network.storm.io/owner: cluster
+  name: cilium-secrets
+---
+apiVersion: v1
 kind: ServiceAccount
 metadata:
   labels:
@@ -343,6 +352,128 @@ subjects:
   name: cilium
   namespace: kube-system
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: network-operator
+    app.kubernetes.io/part-of: cilium
+    network.storm.io/owner: cluster
+  name: cilium-tlsinterception-secrets
+  namespace: cilium-secrets
+rules:
+- apiGroups:
+  - ''
+  resources:
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: network-operator
+    app.kubernetes.io/part-of: cilium
+    network.storm.io/owner: cluster
+  name: cilium-operator-tlsinterception-secrets
+  namespace: cilium-secrets
+rules:
+- apiGroups:
+  - ''
+  resources:
+  - secrets
+  verbs:
+  - create
+  - delete
+  - update
+  - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: network-operator
+    app.kubernetes.io/part-of: cilium
+    network.storm.io/owner: cluster
+  name: cilium-operator-ztunnel
+  namespace: kube-system
+rules:
+- apiGroups:
+  - apps
+  resources:
+  - daemonsets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ''
+  resources:
+  - serviceaccounts
+  verbs:
+  - get
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: network-operator
+    app.kubernetes.io/part-of: cilium
+    network.storm.io/owner: cluster
+  name: cilium-tlsinterception-secrets
+  namespace: cilium-secrets
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cilium-tlsinterception-secrets
+subjects:
+- kind: ServiceAccount
+  name: cilium
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: network-operator
+    app.kubernetes.io/part-of: cilium
+    network.storm.io/owner: cluster
+  name: cilium-operator-tlsinterception-secrets
+  namespace: cilium-secrets
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cilium-operator-tlsinterception-secrets
+subjects:
+- kind: ServiceAccount
+  name: cilium-operator
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: network-operator
+    app.kubernetes.io/part-of: cilium
+    network.storm.io/owner: cluster
+  name: cilium-operator-ztunnel
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cilium-operator-ztunnel
+subjects:
+- kind: ServiceAccount
+  name: cilium-operator
+  namespace: kube-system
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -371,6 +502,7 @@ data:
   enable-health-check-nodeport: 'true'
   enable-health-checking: 'true'
   enable-host-legacy-routing: 'false'
+  enable-hubble: 'true'
   enable-ipsec: 'false'
   enable-ipv4: 'true'
   enable-ipv4-masquerade: 'true'
@@ -380,13 +512,22 @@ data:
   enable-l2-announcements: 'false'
   enable-l7-proxy: 'true'
   enable-lb-ipam: 'false'
+  enable-metrics: 'true'
   enable-policy: default
+  enable-policy-secrets-sync: 'true'
   enable-session-affinity: 'true'
   enable-wireguard: 'false'
   envoy-access-log-buffer-size: '4096'
   envoy-base-id: '0'
   envoy-keep-cap-netbindservice: 'false'
   external-envoy-proxy: 'false'
+  hubble-disable-tls: 'true'
+  hubble-listen-address: :4244
+  hubble-metrics: drop dns tcp flow
+  hubble-metrics-server: :9965
+  hubble-metrics-server-enable-tls: 'false'
+  hubble-network-policy-correlation-enabled: 'true'
+  hubble-socket-path: /var/run/cilium/hubble.sock
   identity-allocation-mode: crd
   ipam: cluster-pool
   ipv4-native-routing-cidr: 10.244.0.0/16
@@ -397,9 +538,82 @@ data:
   monitor-aggregation-flags: all
   monitor-aggregation-interval: 5s
   operator-api-serve-addr: 127.0.0.1:9234
+  operator-prometheus-serve-addr: :9963
+  policy-secrets-namespace: cilium-secrets
+  policy-secrets-only-from-secrets-namespace: 'true'
   preallocate-bpf-maps: 'false'
+  prometheus-serve-addr: :9962
+  proxy-prometheus-port: '9964'
   routing-mode: native
   write-cni-conf-when-ready: /host/etc/cni/net.d/05-cilium.conflist
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    prometheus.io/port: '9964'
+    prometheus.io/scrape: 'true'
+  labels:
+    app.kubernetes.io/managed-by: network-operator
+    app.kubernetes.io/part-of: cilium
+    k8s-app: cilium
+    network.storm.io/owner: cluster
+  name: cilium-agent
+  namespace: kube-system
+spec:
+  clusterIP: None
+  ports:
+  - name: envoy-metrics
+    port: 9964
+    protocol: TCP
+    targetPort: envoy-metrics
+  selector:
+    k8s-app: cilium
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    prometheus.io/port: '9965'
+    prometheus.io/scrape: 'true'
+  labels:
+    app.kubernetes.io/managed-by: network-operator
+    app.kubernetes.io/part-of: cilium
+    k8s-app: hubble
+    network.storm.io/owner: cluster
+  name: hubble-metrics
+  namespace: kube-system
+spec:
+  clusterIP: None
+  ports:
+  - name: hubble-metrics
+    port: 9965
+    protocol: TCP
+    targetPort: hubble-metrics
+  selector:
+    k8s-app: cilium
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: network-operator
+    app.kubernetes.io/part-of: cilium
+    k8s-app: cilium
+    network.storm.io/owner: cluster
+  name: hubble-peer
+  namespace: kube-system
+spec:
+  internalTrafficPolicy: Local
+  ports:
+  - name: peer-service
+    port: 80
+    protocol: TCP
+    targetPort: 4244
+  selector:
+    k8s-app: cilium
 ---
 apiVersion: apps/v1
 kind: DaemonSet
@@ -451,7 +665,7 @@ spec:
               optional: true
         - name: GOMEMLIMIT
           value: 1GiB
-        image: quay.io/cilium/cilium:v1.19.6
+        image: quay.io/cilium/cilium@sha256:9d308e3f7f05972b0b0604c40d2b0f08fa2f6a55084fef1e1aaadb469e430639
         imagePullPolicy: IfNotPresent
         livenessProbe:
           failureThreshold: 10
@@ -463,6 +677,27 @@ spec:
           periodSeconds: 30
           timeoutSeconds: 5
         name: cilium-agent
+        ports:
+        - containerPort: 9879
+          hostPort: 9879
+          name: health
+          protocol: TCP
+        - containerPort: 4244
+          hostPort: 4244
+          name: peer-service
+          protocol: TCP
+        - containerPort: 9962
+          hostPort: 9962
+          name: prometheus
+          protocol: TCP
+        - containerPort: 9964
+          hostPort: 9964
+          name: envoy-metrics
+          protocol: TCP
+        - containerPort: 9965
+          hostPort: 9965
+          name: hubble-metrics
+          protocol: TCP
         readinessProbe:
           failureThreshold: 3
           httpGet:
@@ -527,6 +762,9 @@ spec:
           name: host-proc-sys-kernel
         - mountPath: /tmp
           name: tmp
+        - mountPath: /var/run/cilium/netns
+          mountPropagation: HostToContainer
+          name: cilium-netns
       dnsPolicy: ClusterFirstWithHostNet
       hostNetwork: true
       hostPID: true
@@ -549,7 +787,7 @@ spec:
           value: 192.168.8.98
         - name: KUBERNETES_SERVICE_PORT
           value: '6443'
-        image: quay.io/cilium/cilium:v1.19.6
+        image: quay.io/cilium/cilium@sha256:9d308e3f7f05972b0b0604c40d2b0f08fa2f6a55084fef1e1aaadb469e430639
         imagePullPolicy: IfNotPresent
         name: config
         securityContext:
@@ -572,7 +810,7 @@ spec:
           value: /run/cilium/cgroupv2
         - name: BIN_PATH
           value: /opt/cni/bin
-        image: quay.io/cilium/cilium:v1.19.6
+        image: quay.io/cilium/cilium@sha256:9d308e3f7f05972b0b0604c40d2b0f08fa2f6a55084fef1e1aaadb469e430639
         imagePullPolicy: IfNotPresent
         name: mount-cgroup
         securityContext:
@@ -600,7 +838,7 @@ spec:
         env:
         - name: BIN_PATH
           value: /opt/cni/bin
-        image: quay.io/cilium/cilium:v1.19.6
+        image: quay.io/cilium/cilium@sha256:9d308e3f7f05972b0b0604c40d2b0f08fa2f6a55084fef1e1aaadb469e430639
         imagePullPolicy: IfNotPresent
         name: apply-sysctl-overwrites
         securityContext:
@@ -626,7 +864,7 @@ spec:
         - /bin/bash
         - -c
         - --
-        image: quay.io/cilium/cilium:v1.19.6
+        image: quay.io/cilium/cilium@sha256:9d308e3f7f05972b0b0604c40d2b0f08fa2f6a55084fef1e1aaadb469e430639
         imagePullPolicy: IfNotPresent
         name: mount-bpf-fs
         securityContext:
@@ -651,7 +889,13 @@ spec:
               key: clean-cilium-bpf-state
               name: cilium-config
               optional: true
-        image: quay.io/cilium/cilium:v1.19.6
+        - name: WRITE_CNI_CONF_WHEN_READY
+          valueFrom:
+            configMapKeyRef:
+              key: write-cni-conf-when-ready
+              name: cilium-config
+              optional: true
+        image: quay.io/cilium/cilium@sha256:9d308e3f7f05972b0b0604c40d2b0f08fa2f6a55084fef1e1aaadb469e430639
         imagePullPolicy: IfNotPresent
         name: clean-cilium-state
         securityContext:
@@ -677,7 +921,7 @@ spec:
           name: cilium-run
       - command:
         - /install-plugin.sh
-        image: quay.io/cilium/cilium:v1.19.6
+        image: quay.io/cilium/cilium@sha256:9d308e3f7f05972b0b0604c40d2b0f08fa2f6a55084fef1e1aaadb469e430639
         imagePullPolicy: IfNotPresent
         name: install-cni-binaries
         securityContext:
@@ -742,6 +986,10 @@ spec:
           path: /proc/sys/kernel
           type: Directory
         name: host-proc-sys-kernel
+      - hostPath:
+          path: /var/run/netns
+          type: DirectoryOrCreate
+        name: cilium-netns
       - configMap:
           name: cilium-config
         name: cilium-config-path
@@ -812,7 +1060,7 @@ spec:
               key: debug
               name: cilium-config
               optional: true
-        image: quay.io/cilium/operator-generic:v1.19.6
+        image: quay.io/cilium/operator-generic@sha256:5bb0f9d871dd7b80461f8e3056896daa51e7d9b70ffe51c3e2126b4c35c02b5e
         imagePullPolicy: IfNotPresent
         livenessProbe:
           failureThreshold: 3
@@ -825,6 +1073,15 @@ spec:
           periodSeconds: 10
           timeoutSeconds: 3
         name: cilium-operator
+        ports:
+        - containerPort: 9234
+          hostPort: 9234
+          name: health
+          protocol: TCP
+        - containerPort: 9963
+          hostPort: 9963
+          name: prometheus
+          protocol: TCP
         readinessProbe:
           failureThreshold: 5
           httpGet:
@@ -851,3 +1108,82 @@ spec:
       - configMap:
           name: cilium-config
         name: cilium-config-path
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: network-operator
+    app.kubernetes.io/part-of: cilium
+    network.storm.io/owner: cluster
+  name: hubble-relay-config
+  namespace: kube-system
+data:
+  config.yaml: |
+    cluster-name: default
+    peer-service: "unix:///var/run/cilium/hubble.sock"
+    listen-address: :4245
+    disable-server-tls: true
+    disable-client-tls: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: network-operator
+    app.kubernetes.io/part-of: cilium
+    k8s-app: hubble-relay
+    network.storm.io/owner: cluster
+  name: hubble-relay
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: hubble-relay
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/managed-by: network-operator
+        app.kubernetes.io/part-of: cilium
+        k8s-app: hubble-relay
+        network.storm.io/owner: cluster
+    spec:
+      containers:
+      - args:
+        - serve
+        command:
+        - hubble-relay
+        image: quay.io/cilium/hubble-relay@sha256:48d39e14cb2326c49d1903faed0508feb92ca0ceef9f3a1f1b779ca4c1e51c5d
+        imagePullPolicy: IfNotPresent
+        name: hubble-relay
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp
+        - mountPath: /etc/hubble-relay
+          name: config
+          readOnly: true
+        - mountPath: /var/run/cilium
+          name: hubble-sock
+          readOnly: true
+      hostNetwork: true
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+      - key: node.kubernetes.io/not-ready
+        operator: Exists
+      - key: node.cilium.io/agent-not-ready
+        operator: Exists
+      volumes:
+      - emptyDir: {}
+        name: tmp
+      - configMap:
+          name: hubble-relay-config
+        name: config
+      - hostPath:
+          path: /var/run/cilium
+          type: Directory
+        name: hubble-sock

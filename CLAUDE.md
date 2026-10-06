@@ -92,7 +92,7 @@ object PUT.
       conflict warning added, sc-build rc=0; premise change posted on #18
       and stormcentral#52.
 - [ ] #9 (P1, in progress 2026-10-06) render parity with stormcos's Cilium
-      manifests (stormcos 3dcf6d6 `deploy/manifests/10…75`: now **24** objects,
+      manifests (stormcos 3dcf6d6 `deploy/manifests/10…75`: now **23** objects,
       not 18). Steps: (a) `src/pins.rs` version -> linux/amd64 digests from
       stormcos-cilium `pinned.txt` (1.20.2); `spec.cilium.images.*` overrides
       must be digests; unknown version without digests is rejected; envoy

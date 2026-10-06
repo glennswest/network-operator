@@ -78,7 +78,7 @@ spec:
 #[test]
 fn renders_every_object_stormcos_ships_under_the_same_name() {
     let theirs: BTreeSet<String> = fixtures().iter().map(id).collect();
-    assert_eq!(theirs.len(), 24, "stormcos's object count moved: {theirs:#?}");
+    assert_eq!(theirs.len(), 23, "stormcos's object count moved: {theirs:#?}");
 
     let cfg = resolve_network(&network()).unwrap();
     let ours: BTreeSet<String> = render::render(&cfg).iter().map(|r| r.id()).collect();

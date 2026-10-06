@@ -72,7 +72,7 @@ spec:
                         description: |-
                           Full image reference for `cilium-envoy`.
 
-                          Envoy is versioned independently of Cilium — the tag looks like `v1.36.9-1782267392-<sha>`, which cannot be derived from `spec.cilium.version`. The default is pinned to the Cilium 1.19 series; running a different Cilium minor means setting this explicitly.
+                          Envoy is versioned independently of Cilium — the tag looks like `v1.36.9-1782267392-<sha>`, which cannot be derived from `spec.cilium.version`. The default is the tag from a Cilium 1.19 install and is not pinned by digest (where it should be pinned is #20); set this explicitly when running standalone Envoy.
                         nullable: true
                         type: string
                     type: object
@@ -83,6 +83,32 @@ spec:
                     - legacy
                     nullable: true
                     type: string
+                  hubble:
+                    description: 'Hubble: the agent''s flow server plus the `hubble-relay` aggregation front. On by default.'
+                    nullable: true
+                    properties:
+                      enabled:
+                        description: Default `true`. Turning it off deletes the relay and the Hubble Services.
+                        nullable: true
+                        type: boolean
+                    type: object
+                  images:
+                    description: Per-image overrides, each a full reference pinned by digest (`<repository>@sha256:<hex>`). Each one set wins over the pin table.
+                    nullable: true
+                    properties:
+                      agent:
+                        description: '`cilium/cilium`, used by the agent and its init containers.'
+                        nullable: true
+                        type: string
+                      hubbleRelay:
+                        description: '`cilium/hubble-relay`. Only read when Hubble is enabled.'
+                        nullable: true
+                        type: string
+                      operator:
+                        description: '`cilium/operator-generic`.'
+                        nullable: true
+                        type: string
+                    type: object
                   ipam:
                     nullable: true
                     properties:
@@ -176,7 +202,7 @@ spec:
                         type: string
                     type: object
                   version:
-                    description: Image tag. Bumping it triggers a rolling upgrade.
+                    description: Cilium release, e.g. `1.20.2`. Resolves to an image digest per component through the operator's pin table — a tag is never pulled. A version the operator has no pin for is rejected unless every image is given by digest in `images`. Bumping it triggers a rolling upgrade.
                     nullable: true
                     type: string
                 type: object
