@@ -143,7 +143,9 @@ object PUT.
   #19 (where drift-heal is tested — test Jobs may not touch kube-system) P3.
   #20 (is standalone cilium-envoy supported on stormcos; where its tag is
   pinned — pairs with stormcos#153) P3. #23 (k8sServiceHost: kubelet-
-  injected, resolved at reconcile, or required) P2. All carry `needs-owner`.
+  injected, resolved at reconcile, or required) P2, `needs-owner`. On
+  GitHub (2026-10-06) #18 has no decision label and #19/#20 carry
+  `owner-later`, so only #23 is in the owner's Decisions queue.
 
 ## Status
 
