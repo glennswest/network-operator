@@ -407,7 +407,8 @@ stormcentral test run network-operator short --url http://stormcentral.g8.lo
   escalation prevention requires it to hold their union), and a 1-replica
   `Recreate` Deployment in `kube-system` — hostNetwork, control-plane node
   selector, tolerates everything, `system-cluster-critical`, read-only root,
-  no capabilities. hostNetwork is what lets it start on a node with no CNI and
+  no capabilities, liveness on `/healthz` and readiness on `/readyz` (host
+  port 9446). hostNetwork is what lets it start on a node with no CNI and
   then bring Cilium up underneath itself.
 
   ```
