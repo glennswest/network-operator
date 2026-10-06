@@ -159,7 +159,8 @@ until `deploy/crds/` matches).
       Expect exit 2 on the Network/nodes checks until stormcentral#55
       (cluster-scoped read for test runs).
 - Open: #8 (drift-heal test + must-gather; collector filed as
-  stormcos_qa#22), #7 — P3. #9 also carries the envoy tag mismatch
+  stormcos_qa#22; 2026-10-06 nothing left here — proposed after
+  decision #19, which picks where drift-heal runs), #7 — P3. #9 also carries the envoy tag mismatch
   (1.36.9 here, a tag; stormcos-cilium runs Envoy in the agent, so pins
   none — #20).
   stormcos does NOT ship or preload this operator (#21): its
