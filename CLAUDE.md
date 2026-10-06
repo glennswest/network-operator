@@ -133,13 +133,15 @@ until `deploy/crds/` matches).
       `[router]` alone, stormcos build-goldens writes only the router; its
       VIP half is unshipped). README "where it sits" + deck fixed (12bc5a5);
       sc-build rc=0 (build, test, clippy).
-- [ ] #15 (2026-10-06, in progress) health/metrics listener: `src/metrics.rs`
-      (`/healthz`, `/readyz`, `/metrics` Prometheus text: reconcile counts by
-      result/reason, last success, build info) on `--health-addr`
-      (default `0.0.0.0:9446`, host network — clear of every Cilium port),
-      liveness/readiness probes in `deploy/operator.yaml`. The validating
-      webhook half needs serving certs + rustkube admission support: split
-      to its own `Decide:` issue for the owner, not guessed.
+- [x] #15 (2026-10-06) health/metrics listener: `src/metrics.rs`
+      (`/healthz`, `/readyz`, `/metrics`: reconciles by result, errors by
+      reason, last success/duration, build info) on `--health-addr` /
+      `HEALTH_ADDR` (default `0.0.0.0:9446`, host network, clear of Cilium's
+      ports); liveness/readiness probes in `deploy/operator.yaml`. 7 unit
+      tests incl. a real TCP round-trip; sc-build rc=0 at a4c4ad9 (139 tests,
+      clippy clean) and `test/` at dca0b38 (25 tests, clippy). Not yet run on
+      a cluster. Webhook half split to decision #24 (needs-owner: cert
+      source, reachability before the CNI, failurePolicy).
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
@@ -157,7 +159,7 @@ until `deploy/crds/` matches).
       Expect exit 2 on the Network/nodes checks until stormcentral#55
       (cluster-scoped read for test runs).
 - Open: #8 (drift-heal test + must-gather; collector filed as
-  stormcos_qa#22), #15, #7 — P3. #9 also carries the envoy tag mismatch
+  stormcos_qa#22), #7 — P3. #9 also carries the envoy tag mismatch
   (1.36.9 here, a tag; stormcos-cilium runs Envoy in the agent, so pins
   none — #20).
   stormcos does NOT ship or preload this operator (#21): its
@@ -173,15 +175,17 @@ until `deploy/crds/` matches).
 - Owner decisions pending: #18 (a golden, or stay a preloaded container) P2;
   #19 (where drift-heal is tested — test Jobs may not touch kube-system) P3.
   #20 (is standalone cilium-envoy supported on stormcos; where its tag is
-  pinned — pairs with stormcos#153) P3. #23 (k8sServiceHost: kubelet-
+  pinned — pairs with stormcos#153) P3. #24 (validating webhook: cert
+  source, url vs service, failurePolicy) P3, `needs-owner`. #23 (k8sServiceHost: kubelet-
   injected, resolved at reconcile, or required) P2, `needs-owner`. On
   GitHub (2026-10-06) #18 has no decision label and #19/#20 carry
-  `owner-later`, so only #23 is in the owner's Decisions queue.
+  `owner-later`, so #23 and #24 are in the owner's Decisions queue.
 
 ## Status
 
 Renders, applies, drift-heals and reports on Cilium for all five modes plus
-the optional standalone Envoy. Not shipped as a golden (#18); the image is an
+the optional standalone Envoy, and serves its own `/healthz`, `/readyz`,
+`/metrics` on :9446. Not shipped as a golden (#18); the image is an
 OCI archive on each release; nothing preloads it (stormcos does not ship
 it — it runs Cilium from static manifests, #21). Docs last refreshed from
 the code 2026-10-06 for v0.3.0 (#9: digest pins, Hubble, parity with
