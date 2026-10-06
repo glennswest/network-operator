@@ -201,7 +201,7 @@ mod tests {
     fn healthy() -> serde_json::Value {
         json!({
             "observedGeneration": 2,
-            "appliedMode": "overlay", "appliedVersion": "1.19.6", "appliedDatapath": "tunnel", "appliedIpam": "cluster-pool",
+            "appliedMode": "overlay", "appliedVersion": network_operator::modes::DEFAULT_CILIUM_VERSION, "appliedDatapath": "tunnel", "appliedIpam": "cluster-pool",
             "appliedClusterNetwork": ["10.244.0.0/16"], "appliedServiceNetwork": ["10.96.0.0/12"],
             "conditions": [
                 {"type": "Available", "status": "True", "reason": "AsExpected", "message": "", "lastTransitionTime": "2026-09-27T00:00:00Z"},
