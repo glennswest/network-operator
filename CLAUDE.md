@@ -129,6 +129,9 @@ until `deploy/crds/` matches).
       regardless of `cfg.envoy`) joins `render::reapable`; test that
       envoy-off reaps SA/ConfigMap/DaemonSet/Service and envoy-on reaps none.
       sc-build rc=0 (132 tests, clippy clean).
+- [ ] #22 (2026-10-06) docs: stormlb ships router-only (registry config is
+      `[router]` alone, stormcos build-goldens writes only the router; its
+      VIP half is unshipped). Fix README "where it sits" + deck slide.
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
