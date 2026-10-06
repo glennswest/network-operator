@@ -100,20 +100,14 @@ object PUT.
       kube-system names we render). README/deck/CLAUDE.md fixed (5e70545),
       conflict warning added, sc-build rc=0; premise change posted on #18
       and stormcentral#52.
-- [ ] #9 (P1, in progress 2026-10-06) render parity with stormcos's Cilium
-      manifests (stormcos 3dcf6d6 `deploy/manifests/10…75`: now **23** objects,
-      not 18). Steps: (a) `src/pins.rs` version -> linux/amd64 digests from
-      stormcos-cilium `pinned.txt` (1.20.2); `spec.cilium.images.*` overrides
-      must be digests; unknown version without digests is rejected; envoy
-      stays a tag (#20). (b) default 1.20.2; agent/operator shaped like the
-      1.20.2 render (named ports, cilium-netns, WRITE_CNI_CONF_WHEN_READY).
-      (c) Hubble: `spec.cilium.hubble.enabled` (default true) -> hubble config
-      keys, Services hubble-peer/hubble-metrics, hubble-relay ConfigMap +
-      Deployment (stormcos's unix-socket shape), reaped when off. (d) always:
-      Namespace cilium-secrets + 2 tlsinterception Roles/RoleBindings (L7 proxy
-      is always on), ztunnel Role/RoleBinding, Service cilium-agent, metrics
-      keys. (e) parity test vs stormcos's 24 ids + ConfigMap overlap fixture.
-      k8sServiceHost-at-reconcile is an owner decision -> its own issue.
+- [x] #9 (2026-10-06, v0.3.0) render parity with stormcos's Cilium manifests:
+      the default render is stormcos's 23 objects (not 18 — it grew), same
+      digests, `cilium-config` agrees on all 51 shared keys bar 3 with reasons
+      (`tests/parity.rs`). Digest pins (`src/pins.rs`), Hubble switch, TLS/
+      ztunnel RBAC, 1.20.2 agent shape. Found + fixed: agent and standalone
+      envoy both claimed host port 9964. Split out: k8sServiceHost -> #23
+      (needs-owner). v0.3.0 tagged; no release assets (no build path keeps
+      them; pending #18).
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
@@ -130,11 +124,11 @@ object PUT.
       network-operator short` on C2NR0Q2, fix what it finds, then medium.
       Expect exit 2 on the Network/nodes checks until stormcentral#55
       (cluster-scoped read for test runs).
-- Open: #9 (render parity with the 18 Cilium objects stormcos ships as
-  static manifests; the stormcos-cilium pin is v1.20.2) P1; #12 envoy not reaped, #13 CRD never updated, #14 health
+- Open: #12 envoy not reaped, #13 CRD never updated, #14 health
   rollup — P2; #8 (drift-heal test + must-gather; collector filed as
   stormcos_qa#22), #15, #7 — P3. #9 also carries the envoy tag mismatch
-  (1.36.9 here; stormcos-cilium runs Envoy in the agent, so pins none).
+  (1.36.9 here, a tag; stormcos-cilium runs Envoy in the agent, so pins
+  none — #20).
   stormcos does NOT ship or preload this operator (#21): its
   `editions/kubernetes.toml` is the pre-pivot plan, not the image; the image
   runs Cilium from static manifests with the same kube-system object names
@@ -148,7 +142,8 @@ object PUT.
 - Owner decisions pending: #18 (a golden, or stay a preloaded container) P2;
   #19 (where drift-heal is tested — test Jobs may not touch kube-system) P3.
   #20 (is standalone cilium-envoy supported on stormcos; where its tag is
-  pinned — pairs with stormcos#153) P3. All three carry `needs-owner`.
+  pinned — pairs with stormcos#153) P3. #23 (k8sServiceHost: kubelet-
+  injected, resolved at reconcile, or required) P2. All carry `needs-owner`.
 
 ## Status
 
@@ -156,6 +151,7 @@ Renders, applies, drift-heals and reports on Cilium for all five modes plus
 the optional standalone Envoy. Not shipped as a golden (#18); the image is an
 OCI archive on each release; nothing preloads it (stormcos does not ship
 it — it runs Cilium from static manifests, #21). Docs last refreshed from
-the code 2026-09-27; operator code unchanged since v0.2.4 (only `test/` and
-docs since). `test/` suites built and pushed by stormcentral, never yet run
+the code 2026-10-06 for v0.3.0 (#9: digest pins, Hubble, parity with
+stormcos's 23 Cilium objects; Cilium 1.20.2 not yet run on a cluster by this
+operator). `test/` suites built and pushed by stormcentral, never yet run
 on a cluster (stormcos#135, then stormcentral#56).

@@ -354,6 +354,10 @@ stormcentral test run network-operator short --url http://stormcentral.g8.lo
     | gunzip | podman load        # -> localhost/network-operator:0.3.0
   ```
 
+  v0.3.0 is tagged but has no release assets yet: the build box keeps no
+  artifacts, and how this image should be built and shipped is #18. The
+  newest published archive is v0.2.4.
+
   `localhost/` is local-only to CRI-O, so nothing ever tries to pull it; the
   image must be preloaded on every node that may run the operator (nothing
   preloads it today — stormcos does not; see below). The

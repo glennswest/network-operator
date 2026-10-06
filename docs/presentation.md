@@ -216,7 +216,8 @@ Each is an open issue; the docs say so rather than promise it.
 ## Status and the issues that matter
 
 - **Works**: renders, applies, drift-heals and reports for all five modes plus
-  standalone Envoy. 95 tests (unit + golden) pass under `sc-build`.
+  standalone Envoy, with stormcos's Cilium objects and digests (parity test).
+  114 tests (unit + golden + parity) pass under `sc-build`.
 - **Proven on hardware**: 2026-07-20, rustkube v0.7.29 + fastetcd v1.0.4 +
   rustkube-node v0.2.0 — an `overlay` install came fully up (agent OK, BPF
   loaded, `CiliumNode` created, pods Running first try). That was Cilium

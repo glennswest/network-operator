@@ -3,6 +3,10 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-10-06
+- **docs:** CLAUDE.md #9 done; README notes v0.3.0 has no release assets
+  (#18); deck test count 114.
+
 ## [v0.3.0] — 2026-10-06
 
 ### Breaking
