@@ -142,6 +142,9 @@ until `deploy/crds/` matches).
       clippy clean) and `test/` at dca0b38 (25 tests, clippy). Not yet run on
       a cluster. Webhook half split to decision #24 (needs-owner: cert
       source, reachability before the CNI, failurePolicy).
+- [ ] #7 (2026-10-06) release profile: opt-level 3, thin LTO, codegen-units 1,
+      strip = "debuginfo" (symbols kept for readable reconcile-loop panics,
+      fastetcd's choice). Verify with a release sc-build + `file`/size.
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
