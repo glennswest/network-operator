@@ -108,6 +108,11 @@ object PUT.
       envoy both claimed host port 9964. Split out: k8sServiceHost -> #23
       (needs-owner). v0.3.0 tagged; no release assets (no build path keeps
       them; pending #18).
+- [ ] #14 (2026-10-06, IN PROGRESS) health rollup: `Available` gains
+      `EnvoyNotReady` (cilium-envoy DS when enabled), `CiliumCRDsNotEstablished`
+      (cilium.io CRDs with Established!=True), `CiliumNodesMissing` (a node
+      running an agent pod with no CiliumNode). Snapshot stays pure; envoy
+      pods join the crash-loop check. Then README/deck/CHANGELOG, sc-build.
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
