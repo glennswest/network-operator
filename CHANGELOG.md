@@ -4,6 +4,12 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-06
+- **feat:** the operator serves `/healthz`, `/readyz` and `/metrics` (#15) on
+  `--health-addr` / `HEALTH_ADDR` (default `0.0.0.0:9446`, host network):
+  reconcile passes by result, failures by reason, last success time and
+  duration, build info. `deploy/operator.yaml` gains liveness and readiness
+  probes. `src/metrics.rs`; README "Ports, health, metrics" and the deck
+  updated. The validating-webhook half of #15 is split to decision #24.
 - **docs:** stormlb is no longer described as the apiserver VIP (#22): what
   ships is its L7 router only (registry config `[router]` alone); the VIP
   half is unshipped. README "where it sits" and the deck corrected.

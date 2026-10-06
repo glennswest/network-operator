@@ -202,7 +202,8 @@ kube-proxy replacement on, bpf host routing, MTU auto.
 ### Immutability
 
 Checked by the reconciler against `status.applied*` (`src/immutable.rs`) —
-there is **no validating webhook**. A rejected change leaves the running
+there is **no validating webhook** (whether to add one, and how it gets a
+serving cert, is decision #24). A rejected change leaves the running
 install on its applied config, sets `Degraded=True (ReconcileFailed)` listing
 every violation, and does not move the baseline.
 
@@ -266,13 +267,14 @@ now closed, and the fallbacks stay for older apiservers:
 ### Command line and environment (`src/main.rs`)
 
 ```
-network-operator [--log <filter>] [--log-json] [run | dry-run [FILE]]
+network-operator [--log <filter>] [--log-json] [--health-addr <addr>] [run | dry-run [FILE]]
 ```
 
 | Flag | Env | Default | |
 |---|---|---|---|
 | `--log` | `RUST_LOG` | `info` | tracing filter, e.g. `network_operator=debug` |
 | `--log-json` | `LOG_JSON` | off | JSON log lines |
+| `--health-addr` | `HEALTH_ADDR` | `0.0.0.0:9446` | the `/healthz`, `/readyz`, `/metrics` listener (`run` only) |
 | `run` | | (default command) | connect, register the CRD, run the controller |
 | `dry-run [FILE]` | | `-` (stdin) | print the rendered YAML stream; nothing contacts a cluster |
 
@@ -282,9 +284,27 @@ file.
 
 ### Ports, health, metrics
 
-**The operator itself listens on nothing**: no health endpoint, no metrics
-endpoint, no probes on its Deployment (see [Known gaps](#known-gaps)). Its
-health is visible as the `Network` conditions and its logs.
+**The operator itself** listens on `--health-addr` (default `0.0.0.0:9446`,
+a host port since the pod is host-networked; `src/metrics.rs`), plain HTTP:
+
+| Path | Answers |
+|---|---|
+| `/healthz` (`/livez`) | 200 while the process serves — the Deployment's `livenessProbe` |
+| `/readyz` | 503 until the Network CRD is registered and the controller has started, then 200 — the `readinessProbe` |
+| `/metrics` | Prometheus text (below) |
+
+| Metric | Type | |
+|---|---|---|
+| `network_operator_build_info{version}` | gauge | always 1 |
+| `network_operator_ready` | gauge | 1 once `/readyz` would answer 200 |
+| `network_operator_reconciles_total{result="success"\|"error"}` | counter | reconcile passes |
+| `network_operator_reconcile_errors_total{reason}` | counter | failed passes: `invalid` (spec does not resolve), `immutable`, `apply`, `kube` (status/observe/reap calls) |
+| `network_operator_last_reconcile_success_timestamp_seconds` | gauge | Unix time of the last good pass, 0 = never |
+| `network_operator_last_reconcile_duration_seconds` | gauge | the last pass, either outcome |
+
+The listener binds before the CRD is registered, so a port clash stops the
+operator at start. Cilium's own health is still read from the `Network`
+conditions.
 
 Ports in what it *renders* (all host ports, since those pods are
 host-networked):
@@ -460,8 +480,8 @@ stormcentral test run network-operator short --url http://stormcentral.g8.lo
 What earlier versions of this README promised or implied, and the code does
 not do yet:
 
-- Immutability is enforced by the reconciler, **not** a validating webhook (#15).
-- The operator exposes no health or metrics endpoint (#15).
+- Immutability is enforced by the reconciler, **not** a validating webhook
+  (decision #24: cert source, reachability before the CNI, `failurePolicy`).
 - The tunnel protocol is VXLAN only (no Geneve, no port override); IPv6 and
   dual-stack are not supported; IPsec is rejected.
 - Rendering is Rust code, not per-Cilium-version templates: `version` changes

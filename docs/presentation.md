@@ -159,14 +159,16 @@ Progressing, Degraded.
 **CLI** (`src/main.rs`) — no config file:
 
 ```
-network-operator [--log <filter>] [--log-json] [run | dry-run [FILE]]
-  --log       RUST_LOG   default info
-  --log-json  LOG_JSON   JSON lines
+network-operator [--log <filter>] [--log-json] [--health-addr <addr>] [run | dry-run [FILE]]
+  --log          RUST_LOG     default info
+  --log-json     LOG_JSON     JSON lines
+  --health-addr  HEALTH_ADDR  default 0.0.0.0:9446
   run         the controller (default)
   dry-run     render a CR to YAML, no cluster  (make dry-run FILE=…)
 ```
 
-**Ports** — the operator listens on **none**. Rendered (host network):
+**Ports** — the operator: 9446 `/healthz` (liveness), `/readyz`
+(readiness), `/metrics` (reconcile counts, last success). Rendered (host network):
 agent 9879 `/healthz`, 9962 metrics, 9964 proxy metrics (embedded proxy
 only), 4244 Hubble, 9965 Hubble metrics; cilium-operator 9234 (loopback),
 9963 metrics; hubble-relay 4245; envoy 9878 health / 9964 metrics;
@@ -205,8 +207,8 @@ Each is an open issue; the docs say so rather than promise it.
 - **#23** (decision) `k8sServiceHost`: optional and kubelet-injected (as
   stormcos does), resolved at reconcile time, or still required.
 - Hubble relay across nodes (it reads its own node's socket today).
-- **#15** a health/metrics endpoint for the operator; a validating webhook
-  for immutability.
+- **#24** (decision) a validating webhook for immutability: serving cert,
+  reachable before the CNI, `failurePolicy`.
 - Out of scope today: Geneve / tunnel-port override, IPv6 / dual-stack,
   IPsec (rejected at validation).
 
