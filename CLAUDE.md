@@ -84,6 +84,13 @@ object PUT.
 - [x] #11 presentation — `docs/presentation.md` (Marp, 11 slides), drawn
       from README; "where it sits" from `stormcentral check` (missing
       stormcos edge filed as stormcentral#52). Keep it in step with README.
+- [ ] #21 (P1, in progress 2026-10-06) docs claim stormcos ships/preloads
+      network-operator; verified false against stormcos 3dcf6d6 (compose
+      crate gone, edition marked pre-pivot, image.toml has no member, Cilium
+      ships as static manifests `deploy/manifests/10…75` with the same
+      kube-system names we render). Fix README "How it ships"/"Relationship",
+      presentation slides, CLAUDE.md; add the conflict warning; comment on
+      #18 and stormcentral#52 (premise false).
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
