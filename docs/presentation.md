@@ -61,7 +61,8 @@ The stack's analog of OpenShift's **CNO**. *Not* `cilium-operator` — it
   pre-pivot plan. stormcos ships the same Cilium objects (`DaemonSet/cilium`,
   `cilium-operator`, `cilium-config`) as static manifests — so deploying the
   operator on a stormcos node would fight them. Do not.
-- Not **stormlb**: that fronts the apiserver; this manages pod networking.
+- Not **stormlb**: that owns inbound (shipped as its L7 router only; its
+  apiserver-VIP half is not yet run on any node); this manages pod networking.
 
 ---
 

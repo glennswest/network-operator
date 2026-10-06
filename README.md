@@ -448,9 +448,12 @@ stormcentral test run network-operator short --url http://stormcentral.g8.lo
   [How it ships](#how-it-ships)); the two must not run on the same cluster.
 - **stormcentral** — runs the `test/` suites on its test machines, and is
   where a golden would be built if #18 decides for one.
-- **stormlb** — the pre-cluster apiserver VIP; a separate concern.
-  stormlb fronts the apiserver, network-operator manages in-cluster
-  networking.
+- **stormlb** — a separate concern: it owns inbound, network-operator
+  manages in-cluster networking. What ships on a stormcos node is its
+  **router only** (`[router]`, the L7 Host-header demux over HTTPRoutes on
+  port 80); its VIP half (the pre-cluster apiserver VIP, VRRP/BGP) is
+  implemented but no shipped node runs it (#22). Neither half overlaps the
+  Cilium Service data plane this operator configures.
 
 ## Known gaps
 

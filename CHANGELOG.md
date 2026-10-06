@@ -4,6 +4,9 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-06
+- **docs:** stormlb is no longer described as the apiserver VIP (#22): what
+  ships is its L7 router only (registry config `[router]` alone); the VIP
+  half is unshipped. README "where it sits" and the deck corrected.
 - **fix:** turning `spec.cilium.envoy.enabled` off now deletes the
   `cilium-envoy` ServiceAccount, ConfigMap, DaemonSet and Service (#12);
   they joined `render::reapable`. README reconcile-loop step 4 lists
