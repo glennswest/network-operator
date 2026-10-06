@@ -104,12 +104,12 @@ pub fn render(cfg: &EffectiveConfig) -> Vec<Rendered> {
 ///
 /// Only the conditional objects need listing — the RBAC, config and workloads
 /// are rendered unconditionally and are garbage-collected with the `Network`.
-/// That is the Hubble relay, the agent's Services and the LB/L2/BGP CRs; the conditional
-/// `cilium-envoy` objects are not listed yet, so disabling Envoy leaves them in
-/// place (#12).
+/// That is the Hubble relay, the agent's Services, the standalone `cilium-envoy`
+/// objects and the LB/L2/BGP CRs.
 pub fn reapable(cfg: &EffectiveConfig) -> Vec<Rendered> {
     let mut out = hubble::all(cfg);
     out.extend(services::all(cfg));
+    out.extend(envoy::all(cfg));
     out.extend(lb::all_variants(cfg));
     out
 }
@@ -307,6 +307,39 @@ mod tests {
             assert!(render(&on).iter().any(|r| r.id() == id), "{id} not rendered when on");
             assert!(reap.contains(&id.to_string()), "{id} not reaped when off");
         }
+    }
+
+    /// Turning Envoy off must delete its objects, not orphan them (#12) — the
+    /// DaemonSet would otherwise keep running beside an agent that no longer
+    /// uses it.
+    #[test]
+    fn envoy_off_leaves_its_objects_reapable() {
+        let mut on = cfg_for(Mode::Overlay);
+        on.envoy = true;
+        let mut off = on.clone();
+        off.envoy = false;
+        let rendered: Vec<_> = render(&off).iter().map(|r| r.id()).collect();
+        let reap: Vec<_> = reapable(&off)
+            .iter()
+            .map(|r| r.id())
+            .filter(|id| !rendered.contains(id))
+            .collect();
+        let envoy = [
+            "ServiceAccount/kube-system/cilium-envoy",
+            "ConfigMap/kube-system/cilium-envoy-config",
+            "DaemonSet/kube-system/cilium-envoy",
+            "Service/kube-system/cilium-envoy",
+        ];
+        for id in envoy {
+            assert!(render(&on).iter().any(|r| r.id() == id), "{id} not rendered when on");
+            assert!(reap.contains(&id.to_string()), "{id} not reaped when off");
+        }
+        // And with Envoy on, none of its objects is a reap candidate.
+        let rendered_on: Vec<_> = render(&on).iter().map(|r| r.id()).collect();
+        assert!(reapable(&on)
+            .iter()
+            .filter(|r| envoy.contains(&r.id().as_str()))
+            .all(|r| rendered_on.contains(&r.id())));
     }
 
     #[test]

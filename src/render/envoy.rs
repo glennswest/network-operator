@@ -56,9 +56,15 @@ const NAME_LABEL: (&str, &str) = ("name", "cilium-envoy");
 const BOOTSTRAP: &str = include_str!("assets/envoy-bootstrap.json");
 
 pub fn render(cfg: &EffectiveConfig) -> Vec<Rendered> {
-    if !cfg.envoy {
-        return Vec::new();
+    if cfg.envoy {
+        all(cfg)
+    } else {
+        Vec::new()
     }
+}
+
+/// Envoy's objects, rendered or not. For [`super::reapable`].
+pub fn all(cfg: &EffectiveConfig) -> Vec<Rendered> {
     vec![
         typed(service_account(cfg)),
         typed(config_map(cfg)),

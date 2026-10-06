@@ -68,7 +68,7 @@ impl Rollout {
 
 /// Read the current state of the install. `envoy_wanted` is whether the
 /// config being reconciled runs the standalone `cilium-envoy` DaemonSet; it is
-/// only observed then, since a disabled one may still be lying around (#12).
+/// only observed then, since a disabled one is being reaped, not served.
 pub async fn observe(
     client: &Client,
     deferred: Vec<String>,
@@ -625,7 +625,7 @@ mod tests {
 
     #[test]
     fn an_envoy_that_is_not_wanted_is_ignored() {
-        // A leftover DaemonSet from a disabled envoy (#12) is not observed.
+        // A disabled envoy's DaemonSet, still being reaped, is not observed.
         let snap = Snapshot { envoy: rollout(3, 0), ..healthy() };
         assert_eq!(status_of(&eval(&snap), AVAILABLE), "True");
     }
