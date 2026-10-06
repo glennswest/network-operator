@@ -33,8 +33,14 @@ The pipeline is `crd -> modes -> render -> apply`, and everything before
 - `src/modes.rs` — mode defaults + validation -> `EffectiveConfig`. All policy
   lives here. Unimplemented features (ipsec, standalone envoy) are *rejected*
   here rather than half-rendered.
+- `src/pins.rs` — Cilium version -> linux/amd64 image digests, copied from
+  stormcos-cilium `pinned.txt`. Images are never tags (envoy aside, #20).
 - `src/render/` — `EffectiveConfig` -> objects, in apply order. `config.rs` is
   the load-bearing one: it is where a mode becomes Cilium behaviour.
+  `services.rs` and `hubble.rs` hold the conditional Services and relay.
+- `tests/parity.rs` + `tests/fixtures/stormcos/` — the render against a
+  verbatim copy of stormcos's Cilium manifests (#9). Refresh both, and
+  `pins.rs`, when stormcos-cilium moves its pin.
 - `src/apply.rs` — server-side apply, with the rustkube fallbacks.
 - `src/health.rs` — `observe` reads, `conditions` decides. Keep `conditions`
   pure.
@@ -49,7 +55,10 @@ The pipeline is `crd -> modes -> render -> apply`, and everything before
   immutable server-side; deriving them from config makes any change unappliable.
 - `k8sServiceHost` is required. With kube-proxy replacement there is no Service
   route to the apiserver until Cilium is up, so the agent must be told where it
-  is or the cluster cannot bootstrap.
+  is or the cluster cannot bootstrap. (Whether rustkube-node's per-node
+  injection may replace it is owner decision #23 — until then, keep it.)
+- No image is pulled by tag: every Cilium image resolves to a digest
+  (`src/pins.rs` or an explicit `images` digest).
 - The Cilium CRs (`cilium.io/*`) are applied **last** and a missing CRD is
   deferred, not failed — `cilium-operator` installs those CRDs itself, so on a
   fresh install they legitimately do not exist yet.

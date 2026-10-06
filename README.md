@@ -38,8 +38,13 @@ slide deck of the same material is in [`docs/presentation.md`](docs/presentation
 - **Applies** each object with server-side apply (field manager
   `network-operator`, `force`), in dependency order, with fallbacks for
   rustkube apiservers.
-- **Reaps** the LB-IPAM / L2 / BGP CRs a previous config rendered and this
-  one does not.
+- **Pins every Cilium image by digest**: `spec.cilium.version` resolves
+  through a compiled-in table (`src/pins.rs`, copied from stormcos-cilium's
+  `pinned.txt`, linux/amd64) to one digest per image. A tag is never pulled;
+  an unpinned version is rejected unless the CR names each image by digest.
+- **Reaps** what a previous config rendered and this one does not: the
+  Hubble relay and Services, the `cilium-agent` Service, and the LB-IPAM /
+  L2 / BGP CRs.
 - **Watches** the `Network` plus every DaemonSet, Deployment and ConfigMap in
   `kube-system` that it owns (owner reference), so a hand edit or a deletion
   re-triggers a reconcile. It also resyncs every 60 s.
@@ -56,16 +61,22 @@ deleting the CR garbage-collects the install. Apply order:
 
 | # | Object | When |
 |---|---|---|
-| 1 | `ServiceAccount/cilium`, `ServiceAccount/cilium-operator` | always |
-| 2 | `ClusterRole` + `ClusterRoleBinding` `cilium`, `cilium-operator` | always |
-| 3 | `Role` + `RoleBinding` `cilium-config-agent` (read ConfigMaps in `kube-system`) | always |
-| 4 | `ConfigMap/cilium-config` | always |
-| 5 | `DaemonSet/cilium` (agent; hostNetwork, `system-node-critical`, rolling update `maxUnavailable: 2`) | always |
-| 6 | `Deployment/cilium-operator` (`operator-generic` image, 1 replica, hostNetwork, `system-cluster-critical`) | always |
-| 7 | `ServiceAccount`, `ConfigMap/cilium-envoy-config`, `DaemonSet`, headless `Service` — all `cilium-envoy` | `spec.cilium.envoy.enabled: true` |
-| 8 | `CiliumLoadBalancerIPPool/storm-default` | LB-IPAM on |
-| 9 | `CiliumL2AnnouncementPolicy/storm-default` (`cilium.io/v2alpha1`) | `announce: l2` |
-| 10 | `CiliumBGPClusterConfig/storm`, `CiliumBGPPeerConfig/storm-peers`, `CiliumBGPAdvertisement/storm-advertisements` | `announce: bgp` |
+| 1 | `Namespace/cilium-secrets` (where the L7 proxy reads TLS-interception secrets) | always |
+| 2 | `ServiceAccount/cilium`, `ServiceAccount/cilium-operator` | always |
+| 3 | `ClusterRole` + `ClusterRoleBinding` `cilium`, `cilium-operator` | always |
+| 4 | `Role` + `RoleBinding` `cilium-config-agent` (read ConfigMaps in `kube-system`) | always |
+| 5 | `Role` + `RoleBinding` `cilium-tlsinterception-secrets` (agent reads) and `cilium-operator-tlsinterception-secrets` (operator writes), both in `cilium-secrets` | always — the L7 proxy is always on |
+| 6 | `Role` + `RoleBinding` `cilium-operator-ztunnel` (operator manages the ztunnel DaemonSet in `kube-system`) | always, as the 1.20 chart does |
+| 7 | `ConfigMap/cilium-config` | always |
+| 8 | headless `Service/cilium-agent` (embedded proxy metrics, 9964) | Envoy not split out |
+| 9 | headless `Service/hubble-metrics` (9965), `Service/hubble-peer` (80 → 4244, `internalTrafficPolicy: Local`) | Hubble on (default) |
+| 10 | `DaemonSet/cilium` (agent; hostNetwork, `system-node-critical`, rolling update `maxUnavailable: 2`) | always |
+| 11 | `Deployment/cilium-operator` (`operator-generic` image, 1 replica, hostNetwork, `system-cluster-critical`) | always |
+| 12 | `ConfigMap/hubble-relay-config`, `Deployment/hubble-relay` (hostNetwork, :4245, dials the agent's `hubble.sock`) | Hubble on (default) |
+| 13 | `ServiceAccount`, `ConfigMap/cilium-envoy-config`, `DaemonSet`, headless `Service` — all `cilium-envoy` | `spec.cilium.envoy.enabled: true` |
+| 14 | `CiliumLoadBalancerIPPool/storm-default` | LB-IPAM on |
+| 15 | `CiliumL2AnnouncementPolicy/storm-default` (`cilium.io/v2alpha1`) | `announce: l2` |
+| 16 | `CiliumBGPClusterConfig/storm`, `CiliumBGPPeerConfig/storm-peers`, `CiliumBGPAdvertisement/storm-advertisements` | `announce: bgp` |
 
 The `cilium.io` CRs are applied last because `cilium-operator` installs their
 CRDs itself: on a fresh install a missing CRD is **deferred**, not failed, and
@@ -76,10 +87,14 @@ the reconcile requeues in 10 s with `Progressing=True
 `tests/golden/*.yaml` holds the full render for each mode (plus
 `overlay-envoy`); those files are the exact object list per mode.
 
-Compared with the Cilium objects the stormcos image ships today (as static
-manifests, not through this operator — see [How it ships](#how-it-ships)),
-the render is missing Hubble relay and the TLS-interception RBAC / `cilium-secrets` namespace —
-tracked in [#9](https://github.com/glennswest/network-operator/issues/9).
+**Parity with stormcos.** The default overlay render holds exactly the 23
+objects the stormcos image ships as static manifests (see
+[How it ships](#how-it-ships)), under the same kinds, namespaces and names,
+with the same image digests; and `cilium-config` agrees with stormcos's on
+every key both set, bar three listed with reasons in `tests/parity.rs`.
+`tests/fixtures/stormcos/` is a verbatim copy of those manifests, and
+`cargo test --test parity` checks all of it. What parity does **not** cover
+is listed under [Known gaps](#known-gaps).
 
 ## The `Network` custom resource
 
@@ -100,7 +115,7 @@ spec:
   clusterNetwork: ["10.244.0.0/16"]
   serviceNetwork: ["10.96.0.0/12"]
   cilium:
-    version: "1.19.6"
+    version: "1.20.2"
     k8sServiceHost: "192.168.8.98"
     k8sServicePort: 6443
 ```
@@ -115,8 +130,10 @@ spec:
 | `spec.mode` | `overlay` | `overlay` \| `native` \| `bgp` \| `encrypted` \| `bare-metal`. |
 | `spec.clusterNetwork` | — (**required**) | Pod CIDR(s), at least one, each a valid CIDR. Immutable. |
 | `spec.serviceNetwork` | — (**required**) | Service CIDR(s), at least one. Immutable. Recorded in status and guarded; not written into `cilium-config`. |
-| `spec.cilium.version` | `1.19.6` | Image tag for agent + operator; a leading `v` is added if missing. Bumping it is a rolling upgrade. |
-| `spec.cilium.registry` | `quay.io/cilium` | Prefix for `cilium`, `operator-generic` and `cilium-envoy` images. |
+| `spec.cilium.version` | `1.20.2` | Resolved to a digest per image via `src/pins.rs` (pinned today: `1.20.2`); a leading `v` is accepted. An unpinned version is **rejected** unless `images` names each needed image by digest. Bumping it is a rolling upgrade. |
+| `spec.cilium.images.agent` / `.operator` / `.hubbleRelay` | from the pin | Full references, each **must** be `<repository>@sha256:<64 hex>`; a tag is rejected. Each one set wins over the pin. `hubbleRelay` is only needed with Hubble on. |
+| `spec.cilium.registry` | `quay.io/cilium` | Repository prefix for the pinned `cilium`, `operator-generic` and `hubble-relay` digests and the `cilium-envoy` default. A mirror serves the same bytes, so the digest carries over. |
+| `spec.cilium.hubble.enabled` | `true` | The agent's Hubble server plus `hubble-relay`, `hubble-peer` and `hubble-metrics`. Turning it off deletes those objects. |
 | `spec.cilium.ipam.mode` | mode (`cluster-pool`) | `cluster-pool` \| `kubernetes`. Immutable. |
 | `spec.cilium.ipam.clusterPoolIPv4MaskSize` | `24` | 1–32 and strictly longer than every `clusterNetwork` prefix (cluster-pool only). |
 | `spec.cilium.routing.mode` | mode | `tunnel` (VXLAN, port 8472 — not configurable) \| `native` (sets `ipv4-native-routing-cidr` = clusterNetwork and `auto-direct-node-routes: true`). Immutable. |
@@ -124,7 +141,7 @@ spec:
 | `spec.cilium.kubeProxyReplacement` | `true` | eBPF service handling in place of kube-proxy. |
 | `spec.cilium.hostRouting` | `bpf` | `bpf` \| `legacy` (`enable-host-legacy-routing`). |
 | `spec.cilium.encryption.type` | mode (`none`) | `none` \| `wireguard`. `ipsec` is **rejected** (no keyfile Secret management). |
-| `spec.cilium.k8sServiceHost` | — (**required**) | Apiserver address the agent, operator and Envoy dial; with kube-proxy replacement there is no Service route to it until Cilium is up. |
+| `spec.cilium.k8sServiceHost` | — (**required**) | Apiserver address the agent, operator and Envoy dial; with kube-proxy replacement there is no Service route to it until Cilium is up. Whether it should instead be left to the kubelet (rustkube-node injects it per node) or resolved at reconcile time is an owner decision, [#23](https://github.com/glennswest/network-operator/issues/23). |
 | `spec.cilium.k8sServicePort` | `6443` | Non-zero. |
 | `spec.cilium.loadBalancer.ipam` | mode (`false`) | LB-IPAM for `type: LoadBalancer`. When on, `pools` is required. |
 | `spec.cilium.loadBalancer.pools` | `[]` | CIDRs for `CiliumLoadBalancerIPPool/storm-default`. |
@@ -132,7 +149,7 @@ spec:
 | `spec.cilium.loadBalancer.bgp.localASN` | `0` | Required (1–4294967295) when announcing via BGP. |
 | `spec.cilium.loadBalancer.bgp.peers[]` | `[]` | `{address, asn}`; at least one for BGP; address must be an IP. Every node peers (no node selector); advertises PodCIDR + LoadBalancer IPs. |
 | `spec.cilium.envoy.enabled` | `false` | Split the L7 proxy into the `cilium-envoy` DaemonSet. |
-| `spec.cilium.envoy.image` | `<registry>/cilium-envoy:v1.36.9-1782267392-edeb3f2…` | Envoy is versioned independently of Cilium; the default pairs with 1.19. Set it explicitly on any other Cilium minor. |
+| `spec.cilium.envoy.image` | `<registry>/cilium-envoy:v1.36.9-1782267392-edeb3f2…` | The one image still named by **tag**: Envoy is versioned independently of Cilium, the default is from a 1.19 install, and nothing pins a digest for it yet (#20). Set it explicitly when running standalone Envoy on 1.20. |
 | `spec.cilium.clusterName` | `default` | Non-empty. |
 | `spec.cilium.clusterID` | `0` | 0–255. |
 
@@ -259,7 +276,13 @@ host-networked):
 | Port | Where | What |
 |---|---|---|
 | 9879 | `cilium` agent | `/healthz` (`agent-health-port`); startup, liveness, readiness probes |
+| 9962 | `cilium` agent | Prometheus metrics (`prometheus-serve-addr`) |
+| 9964 | `cilium` agent | embedded proxy's metrics (`proxy-prometheus-port`); `Service/cilium-agent`. Not declared while Envoy is standalone — `cilium-envoy` binds it then |
+| 4244 | `cilium` agent | Hubble server (`hubble-listen-address`), TLS off; `Service/hubble-peer` (Hubble on) |
+| 9965 | `cilium` agent | Hubble metrics (`hubble-metrics-server`); `Service/hubble-metrics` (Hubble on) |
 | 9234 | `cilium-operator` | `/healthz` on `127.0.0.1` (`operator-api-serve-addr`) |
+| 9963 | `cilium-operator` | Prometheus metrics (`operator-prometheus-serve-addr`) |
+| 4245 | `hubble-relay` | the flow API (gRPC), TLS off (Hubble on) |
 | 9878 | `cilium-envoy` | health listener (loopback) |
 | 9964 | `cilium-envoy` | Prometheus metrics; exposed by the headless `cilium-envoy` Service |
 | 8472/udp | every node | VXLAN (tunnel modes) |
@@ -382,12 +405,13 @@ stormcentral test run network-operator short --url http://stormcentral.g8.lo
 
   | | Cilium | Envoy |
   |---|---|---|
-  | this repo (`src/modes.rs`) | `1.19.6` | `v1.36.9-1782267392-…` |
+  | this repo (`src/pins.rs`, by digest) | `1.20.2` | `v1.36.9-1782267392-…` (tag; standalone Envoy only) |
   | stormcos-cilium `pinned.txt` / stormcos `deploy/pinned-images.txt` (by digest) | `v1.20.2` | — |
 
-  stormcos-cilium runs Envoy inside the agent and pins no `cilium-envoy`
-  image, so there is no digest for the Envoy default to follow (noted on #9).
-  This repo's side is [#9](https://github.com/glennswest/network-operator/issues/9).
+  The Cilium digests are the same bytes (`tests/parity.rs` checks them).
+  stormcos-cilium runs Envoy inside the agent, as this operator does by
+  default, and pins no `cilium-envoy` image; where the standalone tag should
+  be pinned is #20.
 
 ## Relationship to the rest of the stack
 
@@ -396,8 +420,9 @@ stormcentral test run network-operator short --url http://stormcentral.g8.lo
 - **rustkube-node** — the kubelet that runs the Cilium pods (the agent's
   `startupProbe` depends on its probe support).
 - **stormcos-cilium** — pins the Cilium images (by digest) and renders the
-  manifests stormcos ships (v1.20.2 today); network-operator's defaults
-  should match it (#9).
+  manifests stormcos ships (v1.20.2 today). `src/pins.rs` copies its
+  digests, and `tests/fixtures/stormcos/` its rendered manifests; both are
+  refreshed by hand when it moves its pin.
 - **stormcos** — does **not** use network-operator: it ships Cilium as
   static manifests rendered by stormcos-cilium (see
   [How it ships](#how-it-ships)); the two must not run on the same cluster.
@@ -423,13 +448,27 @@ not do yet:
 - The tunnel protocol is VXLAN only (no Geneve, no port override); IPv6 and
   dual-stack are not supported; IPsec is rejected.
 - Rendering is Rust code, not per-Cilium-version templates: `version` changes
-  the image tags and the `cilium.io` API version, nothing else. Config keys
-  that a newer Cilium renamed are not tracked (#9).
-- Render parity with the Cilium objects stormcos ships as static manifests
-  (Hubble, TLS interception): #9.
+  the image digests and the `cilium.io` API version, nothing else. Config
+  keys that a newer Cilium renamed are not tracked; the agent and operator
+  are shaped like the 1.20.2 chart.
+- Parity with stormcos is by object and by overlapping key, not byte for
+  byte. `cilium-config` sets 62 keys; stormcos's chart render sets 170 (51 in common).
+  The rest are left to the agent's defaults, which is not always what the
+  chart writes — e.g. stormcos names `devices: stormbr0`, which has no CRD
+  field here. The agent's `clustermesh-secrets` volume is not rendered
+  (no ClusterMesh).
+- `hubble-relay` dials the agent's unix socket on its own node (stormcos's
+  shape), so on a multi-node cluster it sees one node's flows; pointing it
+  at `hubble-peer` is not wired.
+- Pins are linux/amd64 only, and only for 1.20.2.
+- `k8sServiceHost` is still required and written into every pod, which
+  stormcos deliberately does not do: decision #23.
 
 ## Validation
 
+- `cargo test --test parity`: the render against a verbatim copy of
+  stormcos's Cilium manifests — object set, image digests, overlapping
+  `cilium-config` keys (see [What gets rendered](#what-gets-rendered)).
 - `sc-build` on dev.g8.lo: `cargo build && cargo test` — unit tests plus the
   golden render tests, no cluster.
 - `test/`: the suites' unit tests under `sc-build`; the image built and

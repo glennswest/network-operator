@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+### 2026-10-06 (#9 render parity with stormcos)
+- **BREAKING:** images are pinned by digest. `spec.cilium.version` resolves
+  through `src/pins.rs` (linux/amd64 digests copied from stormcos-cilium
+  `pinned.txt`) and a version with no pin is rejected unless
+  `spec.cilium.images.{agent,operator,hubbleRelay}` name each needed image
+  by digest. A tag in `images` is rejected. The default Cilium is now
+  **1.20.2** (was 1.19.6, which has no pin). `cilium-envoy` stays a tag
+  pending #20.
+- **feat:** `spec.cilium.hubble.enabled` (default `true`): Hubble server keys
+  in `cilium-config`, `Service/hubble-peer`, `Service/hubble-metrics`,
+  `ConfigMap/hubble-relay-config` and `Deployment/hubble-relay` (stormcos's
+  host-networked, unix-socket shape). All reaped when turned off.
+- **feat:** `Namespace/cilium-secrets` with the agent's and operator's
+  TLS-interception Roles/RoleBindings and the `policy-secrets-*` keys; the
+  1.20 `cilium-operator-ztunnel` Role/RoleBinding; headless
+  `Service/cilium-agent` for the embedded proxy's metrics; agent/operator
+  metrics keys and named host ports.
+- **feat:** agent shaped like the 1.20.2 chart: named ports, the
+  `cilium-netns` mount, `WRITE_CNI_CONF_WHEN_READY` on `clean-cilium-state`.
+- **fix:** the agent does not declare the proxy-metrics host port (9964)
+  while `cilium-envoy` runs standalone and binds it; `Service/cilium-agent`
+  is rendered only for the embedded proxy and reaped otherwise.
+- **test:** `tests/parity.rs` checks the default render against a verbatim
+  copy of stormcos's Cilium manifests (`tests/fixtures/stormcos/`, stormcos
+  3dcf6d6): the same 23 objects (the issue said 18; stormcos has grown),
+  the same image digests, and `cilium-config` agreeing on every shared key
+  bar three with stated reasons.
+- **docs:** README (rendered objects, fields, ports, parity, known gaps),
+  deck and examples updated. `k8sServiceHost` at reconcile time split out
+  as owner decision #23.
+
 ### 2026-10-06
 - **docs:** README, deck and CLAUDE.md no longer say stormcos ships or
   preloads network-operator (#21). Verified against stormcos: no
