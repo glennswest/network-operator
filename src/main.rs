@@ -5,7 +5,7 @@
 
 use clap::{Parser, Subcommand};
 use kube::Client;
-use network_operator::{crd::Network, modes, register, render};
+use network_operator::{crd::Network, metrics, modes, register, render};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[derive(Parser)]
@@ -18,6 +18,11 @@ struct Cli {
     /// Emit logs as JSON, for a cluster log pipeline.
     #[arg(long, env = "LOG_JSON")]
     log_json: bool,
+
+    /// Address of the `/healthz`, `/readyz` and `/metrics` listener. The pod
+    /// is host-networked, so this is a host port.
+    #[arg(long, env = "HEALTH_ADDR", default_value = metrics::DEFAULT_ADDR)]
+    health_addr: std::net::SocketAddr,
 
     #[command(subcommand)]
     command: Option<Command>,
@@ -42,12 +47,16 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         None | Some(Command::Run) => {
+            // Up first, so liveness answers while the CRD is registered;
+            // readiness waits for the controller.
+            let metrics = metrics::Metrics::new();
+            metrics::serve(cli.health_addr, metrics.clone()).await?;
             let client = Client::try_default().await?;
             // The operator owns its own CRD — self-register it (and update its
             // schema on upgrade) so deploying the operator is all that's
             // needed; the admin only supplies a Network CR.
             register::ensure_crd(&client).await?;
-            network_operator::controller::run(client).await
+            network_operator::controller::run(client, metrics).await
         }
         Some(Command::DryRun { file }) => dry_run(&file),
     }

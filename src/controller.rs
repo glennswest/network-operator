@@ -13,7 +13,7 @@
 //! `Network` and re-triggers the pass, which re-applies our intent.
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures::StreamExt;
 use k8s_openapi::api::apps::v1::{DaemonSet, Deployment};
@@ -28,6 +28,7 @@ use tracing::{error, info, warn};
 use crate::crd::{Network, NetworkStatus};
 use crate::modes::{resolve_network, EffectiveConfig, NAMESPACE};
 use crate::render::Rendered;
+use crate::metrics::{FailureReason, Metrics};
 use crate::{apply, health, immutable, render, status};
 
 /// Resync even when nothing has changed. Catches anything a watch could miss —
@@ -41,6 +42,7 @@ const DEFERRED_RETRY: Duration = Duration::from_secs(10);
 
 pub struct Context {
     pub client: Client,
+    pub metrics: Arc<Metrics>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -58,10 +60,25 @@ pub enum Error {
     Kube(#[from] kube::Error),
 }
 
-/// Run the controller until the process is signalled.
-pub async fn run(client: Client) -> anyhow::Result<()> {
+impl Error {
+    fn reason(&self) -> FailureReason {
+        match self {
+            Error::Invalid(_) => FailureReason::Invalid,
+            Error::Immutable(_) => FailureReason::Immutable,
+            Error::Apply(_) => FailureReason::Apply,
+            Error::Kube(_) => FailureReason::Kube,
+        }
+    }
+}
+
+/// Run the controller until the process is signalled. `metrics` is marked
+/// ready here and counts every pass.
+pub async fn run(client: Client, metrics: Arc<Metrics>) -> anyhow::Result<()> {
     let networks: Api<Network> = Api::all(client.clone());
-    let ctx = Arc::new(Context { client: client.clone() });
+    let ctx = Arc::new(Context {
+        client: client.clone(),
+        metrics: metrics.clone(),
+    });
 
     // Owned objects, watched so drift and deletions self-heal.
     let daemonsets: Api<DaemonSet> = Api::namespaced(client.clone(), NAMESPACE);
@@ -69,12 +86,13 @@ pub async fn run(client: Client) -> anyhow::Result<()> {
     let configmaps: Api<ConfigMap> = Api::namespaced(client.clone(), NAMESPACE);
 
     info!(namespace = NAMESPACE, "starting network-operator");
+    metrics.set_ready();
 
     Controller::new(networks, WatcherConfig::default())
         .owns(daemonsets, WatcherConfig::default())
         .owns(deployments, WatcherConfig::default())
         .owns(configmaps, WatcherConfig::default())
-        .run(reconcile, on_error, ctx)
+        .run(reconcile_counted, on_error, ctx)
         .for_each(|res| async move {
             match res {
                 Ok((obj, _)) => info!(network = %obj.name, "reconciled"),
@@ -83,6 +101,18 @@ pub async fn run(client: Client) -> anyhow::Result<()> {
         })
         .await;
     Ok(())
+}
+
+/// [`reconcile`], counted into the `/metrics` listener.
+async fn reconcile_counted(net: Arc<Network>, ctx: Arc<Context>) -> Result<Action, Error> {
+    let started = Instant::now();
+    let result = reconcile(net, ctx.clone()).await;
+    let took = started.elapsed().as_micros() as u64;
+    match &result {
+        Ok(_) => ctx.metrics.record_success(chrono::Utc::now().timestamp(), took),
+        Err(e) => ctx.metrics.record_failure(e.reason(), took),
+    }
+    result
 }
 
 async fn reconcile(net: Arc<Network>, ctx: Arc<Context>) -> Result<Action, Error> {

@@ -80,6 +80,27 @@ spec:
         env:
         - name: RUST_LOG
           value: info
+        # /healthz, /readyz, /metrics (src/metrics.rs). A host port, since the
+        # pod is host-networked; clear of every port Cilium binds.
+        - name: HEALTH_ADDR
+          value: 0.0.0.0:9446
+        ports:
+        - name: health
+          containerPort: 9446
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 9446
+          initialDelaySeconds: 10
+          periodSeconds: 20
+          failureThreshold: 3
+        # Ready once the Network CRD is registered and the controller runs.
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 9446
+          periodSeconds: 10
         resources:
           requests:
             cpu: 10m
