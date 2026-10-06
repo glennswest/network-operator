@@ -25,7 +25,8 @@ pub fn render(cfg: &EffectiveConfig) -> Vec<Rendered> {
         out.push(agent_metrics(cfg));
     }
     if cfg.hubble {
-        out.extend(hubble(cfg));
+        out.push(hubble_metrics(cfg));
+        out.push(hubble_peer(cfg));
     }
     out
 }
