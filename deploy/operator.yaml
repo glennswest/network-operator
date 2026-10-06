@@ -74,7 +74,7 @@ spec:
         #   curl -L .../network-operator-<version>-oci.tar.gz | gunzip | podman load
         # The tag must match the archive that was loaded onto the node; the
         # package build checks the two agree.
-        image: localhost/network-operator:0.2.4
+        image: localhost/network-operator:0.3.0
         imagePullPolicy: IfNotPresent
         args: ["run"]
         env:

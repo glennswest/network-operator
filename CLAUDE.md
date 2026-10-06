@@ -79,7 +79,7 @@ object PUT.
 
 ## Version
 
-`0.2.4` (tag `v0.2.4`). Version locations, all must match: `Cargo.toml`,
+`0.3.0` (tag `v0.3.0`). Version locations, all must match: `Cargo.toml`,
 `deploy/operator.yaml` (image tag), the OCI-archive example in `README.md`.
 `Cargo.lock` is committed (the image builds `--locked`).
 

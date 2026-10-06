@@ -7,7 +7,7 @@ description: Purpose and functionality of network-operator, the Cluster Network 
 ---
 
 <!-- Render: npx @marp-team/marp-cli docs/presentation.md   (add --pdf for PDF)
-     Every claim here is checkable against the code at v0.2.4; the source file
+     Every claim here is checkable against the code at v0.3.0; the source file
      is named on each slide. Keep it in step with README.md. -->
 
 # network-operator
@@ -16,7 +16,7 @@ description: Purpose and functionality of network-operator, the Cluster Network 
 
 Cilium from one `Network` custom resource — installed, kept, healed, reported.
 
-v0.2.4 · Rust · Apache-2.0 · github.com/glennswest/network-operator
+v0.3.0 · Rust · Apache-2.0 · github.com/glennswest/network-operator
 
 ---
 

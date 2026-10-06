@@ -1,6 +1,36 @@
 # Changelog
 
 ## [Unreleased]
+<!-- New unreleased changes go here -->
+
+## [v0.3.0] — 2026-10-06
+
+### Breaking
+- Cilium images are pinned by digest (`src/pins.rs`, from stormcos-cilium
+  `pinned.txt`, linux/amd64). A `spec.cilium.version` with no pin is
+  rejected unless `spec.cilium.images` names each needed image by digest; a
+  tag there is rejected. Default Cilium moves from 1.19.6 (unpinned) to
+  1.20.2. (#9)
+
+### Added
+- `spec.cilium.hubble.enabled` (default on): Hubble relay, `hubble-peer`,
+  `hubble-metrics`, reaped when off. (#9)
+- `cilium-secrets` namespace + TLS-interception RBAC, ztunnel RBAC,
+  `Service/cilium-agent`, metrics ports and keys; the agent shaped like the
+  1.20.2 chart. (#9)
+- `tests/parity.rs`: the render against a verbatim copy of stormcos's Cilium
+  manifests. (#9)
+- `test/`: on-cluster short/medium/long suites (#16).
+
+### Fixed
+- The agent no longer claims host port 9964 beside a standalone
+  `cilium-envoy`. (#9)
+
+### Documentation
+- README/deck rewritten from the code (#10, #11); stormcos does not ship
+  this operator (#21); parity, pins and remaining gaps documented (#9).
+
+### Detail, by date
 
 ### 2026-10-06 (#9 render parity with stormcos)
 - **BREAKING:** images are pinned by digest. `spec.cilium.version` resolves

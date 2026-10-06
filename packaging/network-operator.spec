@@ -50,6 +50,13 @@ done
 %{_datadir}/%{name}/
 
 %changelog
+* Tue Oct 06 2026 Glenn West <glennswest@neuralcloudcomputing.com> - 0.3.0-1
+- Pin every Cilium image by digest; default Cilium 1.20.2. An unpinned
+  version is rejected unless spec.cilium.images names each image by digest.
+- Hubble (spec.cilium.hubble.enabled, default on): relay, hubble-peer and
+  hubble-metrics. TLS-interception namespace and RBAC, ztunnel RBAC and the
+  cilium-agent metrics Service, matching the objects stormcos ships.
+
 * Tue Jul 21 2026 Glenn West <glennswest@neuralcloudcomputing.com> - 0.2.4-1
 - Distribute the image as the OCI archive attached to the release; drop the
   ghcr registry reference in favour of a local, loaded image.
