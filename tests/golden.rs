@@ -12,7 +12,7 @@
 
 use std::path::PathBuf;
 
-use network_operator::crd::{Mode, Network};
+use network_operator::crd::{ImagesSpec, Mode, Network};
 use network_operator::modes::{resolve, resolve_network};
 use network_operator::render;
 
@@ -65,7 +65,7 @@ spec:
   clusterNetwork: ["10.244.0.0/16"]
   serviceNetwork: ["10.96.0.0/12"]
   cilium:
-    version: "1.19.6"
+    version: "1.20.2"
     kubeProxyReplacement: true
     k8sServiceHost: "192.168.8.98"
     k8sServicePort: 6443{load_balancer}{envoy}
@@ -174,18 +174,28 @@ spec:
     assert!(round_tripped.contains("localASN"));
 }
 
-/// An upgrade must change image tags and nothing else — the property that makes
-/// `spec.cilium.version` a safe knob to turn.
+/// An upgrade must change image references and nothing else — the property
+/// that makes `spec.cilium.version` (or `images`) a safe knob to turn.
 #[test]
-fn a_version_bump_only_moves_image_tags() {
+fn an_image_change_only_moves_image_references() {
+    const D: &str = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
     let base: Network = serde_yaml::from_str(&manifest("overlay")).unwrap();
+    let cfg = resolve_network(&base).unwrap();
     let mut bumped = base.clone();
-    bumped.spec.cilium.as_mut().unwrap().version = Some("1.20.0".into());
+    bumped.spec.cilium.as_mut().unwrap().images = Some(ImagesSpec {
+        agent: Some(format!("quay.io/cilium/cilium@{D}")),
+        operator: Some(format!("quay.io/cilium/operator-generic@{D}")),
+        hubble_relay: Some(format!("quay.io/cilium/hubble-relay@{D}")),
+    });
 
     let before = render_to_yaml(&base);
     let after = render_to_yaml(&bumped);
     assert_ne!(before, after);
-    assert_eq!(before.replace("v1.19.6", "v1.20.0"), after);
+    let moved = before
+        .replace(&cfg.agent_image, &format!("quay.io/cilium/cilium@{D}"))
+        .replace(&cfg.operator_image, &format!("quay.io/cilium/operator-generic@{D}"))
+        .replace(&cfg.hubble_relay_image, &format!("quay.io/cilium/hubble-relay@{D}"));
+    assert_eq!(moved, after);
 }
 
 /// Two clusters that differ only in a runtime-changeable field must not differ

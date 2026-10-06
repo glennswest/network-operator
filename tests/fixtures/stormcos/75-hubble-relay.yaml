@@ -1,0 +1,107 @@
+# Hubble relay — the flow API the console's flow view reads (#11, second half).
+#
+# The agent already runs the Hubble *server* (:4244, enabled in
+# 50-cilium-config.yaml); the relay is the aggregation front the tooling
+# expects — one gRPC endpoint (:4245) that fans out to every node's server.
+# On one node that fan-out is a single unix socket, and that is how it is
+# wired: the relay dials the agent's own /var/run/cilium/hubble.sock over a
+# hostPath, which needs no TLS, no peer Service and no DNS. On a multi-node
+# cluster this moves to the hubble-peer Service; single-socket is not a
+# shortcut but the exact upstream shape for same-host relay.
+#
+# hostNetwork, so :4245 is on the node beside the console's other upstreams.
+# TLS off end to end, same reasoning as the ConfigMap's: a flow API more
+# locked down than the apiserver it describes protects nothing yet.
+#
+# The image is a baked golden like the agent's and the operator's — pinned by
+# digest in deploy/pinned-images.txt, converted by the registry and mounted at
+# /pallets/hubble-relay — so a node with no route to quay.io still starts its
+# own flow API. The registry's pull-through remains the path for landing the
+# relay on a *running* node without a rebuild; it is not how this ships.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hubble-relay-config
+  namespace: kube-system
+data:
+  config.yaml: |
+    cluster-name: default
+    peer-service: "unix:///var/run/cilium/hubble.sock"
+    listen-address: :4245
+    disable-server-tls: true
+    disable-client-tls: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hubble-relay
+  namespace: kube-system
+  labels:
+    k8s-app: hubble-relay
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: hubble-relay
+  template:
+    metadata:
+      labels:
+        k8s-app: hubble-relay
+    spec:
+      hostNetwork: true
+      # The same set the operator carries. The relay comes up while the node
+      # still holds its boot taints — it is hostNetwork and dials a unix
+      # socket, so it needs neither CNI nor a Ready node — and without these
+      # it simply never schedules, which reads as "the flow API is missing"
+      # rather than as a scheduling decision.
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+      - key: node.kubernetes.io/not-ready
+        operator: Exists
+      - key: node.cilium.io/agent-not-ready
+        operator: Exists
+      containers:
+      - name: hubble-relay
+        image: quay.io/cilium/hubble-relay@sha256:48d39e14cb2326c49d1903faed0508feb92ca0ceef9f3a1f1b779ca4c1e51c5d
+        # Never pull: the image is a baked golden (system1/hubble-relay,
+        # mounted at /pallets/hubble-relay), the same as the agent's and the
+        # operator's.
+        imagePullPolicy: IfNotPresent
+        command:
+        - hubble-relay
+        # `serve` and nothing else, which is upstream's own argument list.
+        #
+        # The relay reads /etc/hubble-relay/config.yaml by default, and that is
+        # exactly where the ConfigMap below is mounted, so there is nothing to
+        # point at. An earlier --config=... here was not a flag the binary has:
+        # it exited with "unknown flag: --config" on every start, which the pod
+        # reported as phase Running with a container in CrashLoopBackOff — the
+        # flow API was down while `get pods` showed Running.
+        args:
+        - serve
+        volumeMounts:
+        # Writable /tmp, which upstream also mounts. Upstream needs it because
+        # it sets readOnlyRootFilesystem; here the root *is* read-only whether
+        # we ask for it or not — the image is a sealed golden — so the relay
+        # has nowhere to write without this.
+        - name: tmp
+          mountPath: /tmp
+        - name: config
+          mountPath: /etc/hubble-relay
+          readOnly: true
+        - name: hubble-sock
+          mountPath: /var/run/cilium
+          readOnly: true
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: config
+        configMap:
+          name: hubble-relay-config
+      - name: hubble-sock
+        hostPath:
+          path: /var/run/cilium
+          type: Directory

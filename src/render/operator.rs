@@ -95,7 +95,7 @@ fn pod_spec(cfg: &EffectiveConfig) -> PodSpec {
         }),
         containers: vec![Container {
             name: "cilium-operator".to_string(),
-            image: Some(cfg.operator_image()),
+            image: Some(cfg.operator_image.clone()),
             image_pull_policy: Some("IfNotPresent".to_string()),
             command: Some(vec!["cilium-operator-generic".to_string()]),
             args: Some(vec![
@@ -123,6 +123,10 @@ fn pod_spec(cfg: &EffectiveConfig) -> PodSpec {
                 failure_threshold: Some(5),
                 ..health_probe(HEALTH_PORT, "/healthz")
             }),
+            ports: Some(vec![
+                host_port("health", HEALTH_PORT),
+                host_port("prometheus", super::OPERATOR_PROMETHEUS_PORT),
+            ]),
             volume_mounts: Some(vec![mount_ro("cilium-config-path", "/tmp/cilium/config-map")]),
             termination_message_policy: Some("FallbackToLogsOnError".to_string()),
             ..Default::default()
@@ -174,7 +178,7 @@ mod tests {
     fn runs_the_generic_operator_because_ipam_is_never_cloud() {
         let d = deploy(&cfg_for(Mode::Overlay));
         let c = &d.spec.unwrap().template.spec.unwrap().containers[0];
-        assert_eq!(c.image.as_deref(), Some("quay.io/cilium/operator-generic:v1.19.6"));
+        assert!(c.image.as_deref().unwrap().starts_with("quay.io/cilium/operator-generic@sha256:"));
         assert_eq!(c.command.as_deref(), Some(&["cilium-operator-generic".to_string()][..]));
     }
 

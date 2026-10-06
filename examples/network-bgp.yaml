@@ -9,7 +9,7 @@ spec:
   clusterNetwork: ["10.244.0.0/16"]
   serviceNetwork: ["10.96.0.0/12"]
   cilium:
-    version: "1.19.6"
+    version: "1.20.2"
     kubeProxyReplacement: true
     k8sServiceHost: "192.168.8.98"
     k8sServicePort: 6443

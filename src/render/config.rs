@@ -8,7 +8,11 @@ use std::collections::BTreeMap;
 use crate::crd::{Announce, EncryptionType, HostRouting, IpamMode, RoutingMode};
 use crate::modes::EffectiveConfig;
 
-use super::{meta, typed, Rendered, AGENT_HEALTH_PORT, CONFIG_MAP};
+use super::{
+    meta, typed, Rendered, AGENT_HEALTH_PORT, AGENT_PROMETHEUS_PORT, CONFIG_MAP,
+    ENVOY_METRICS_PORT, HUBBLE_METRICS_PORT, HUBBLE_PEER_PORT, OPERATOR_PROMETHEUS_PORT,
+    SECRETS_NAMESPACE,
+};
 
 /// Default VXLAN port. Cilium's own default; the OpenShift analogue is
 /// `genevePort`.
@@ -122,6 +126,12 @@ pub fn data(cfg: &EffectiveConfig) -> BTreeMap<String, String> {
     set("enable-policy", "default");
     set("enable-k8s-networkpolicy", "true");
     set("enable-l7-proxy", "true");
+    // The L7 proxy reads TLS secrets for policy (TLS interception, SNI) only
+    // from this namespace, which rbac.rs creates and grants. Always on because
+    // the L7 proxy is; the values are the 1.20 chart's.
+    set("enable-policy-secrets-sync", "true");
+    set("policy-secrets-only-from-secrets-namespace", "true");
+    set("policy-secrets-namespace", SECRETS_NAMESPACE);
     // When false the proxy stays embedded in the agent; when true the
     // standalone cilium-envoy DaemonSet carries it.
     set("external-envoy-proxy", bool_str(cfg.envoy));
@@ -137,6 +147,29 @@ pub fn data(cfg: &EffectiveConfig) -> BTreeMap<String, String> {
         "write-cni-conf-when-ready",
         "/host/etc/cni/net.d/05-cilium.conflist",
     );
+
+    // --- metrics ---
+    // The ports are named on the pods and fronted by Services (services.rs).
+    set("enable-metrics", "true");
+    set("prometheus-serve-addr", &format!(":{AGENT_PROMETHEUS_PORT}"));
+    set("operator-prometheus-serve-addr", &format!(":{OPERATOR_PROMETHEUS_PORT}"));
+    set("proxy-prometheus-port", &ENVOY_METRICS_PORT.to_string());
+
+    // --- Hubble ---
+    set("enable-hubble", bool_str(cfg.hubble));
+    if cfg.hubble {
+        // The relay dials this socket over a hostPath (hubble.rs); the TCP
+        // listener is for the hubble-peer Service. TLS is off end to end, as
+        // in stormcos: a flow API locked down harder than the apiserver it
+        // describes protects nothing.
+        set("hubble-socket-path", "/var/run/cilium/hubble.sock");
+        set("hubble-listen-address", &format!(":{HUBBLE_PEER_PORT}"));
+        set("hubble-disable-tls", "true");
+        set("hubble-metrics-server", &format!(":{HUBBLE_METRICS_PORT}"));
+        set("hubble-metrics-server-enable-tls", "false");
+        set("hubble-metrics", "drop dns tcp flow");
+        set("hubble-network-policy-correlation-enabled", "true");
+    }
 
     // --- health / operations ---
     set("agent-health-port", &AGENT_HEALTH_PORT.to_string());
@@ -226,6 +259,27 @@ mod tests {
         assert_eq!(overlay["enable-lb-ipam"], "false");
         assert_eq!(overlay["enable-l2-announcements"], "false");
         assert_eq!(overlay["enable-bgp-control-plane"], "false");
+    }
+
+    #[test]
+    fn hubble_keys_follow_the_switch() {
+        let mut cfg = cfg_for(Mode::Overlay);
+        let on = data(&cfg);
+        assert_eq!(on["enable-hubble"], "true");
+        assert_eq!(on["hubble-socket-path"], "/var/run/cilium/hubble.sock");
+        assert_eq!(on["hubble-listen-address"], ":4244");
+        cfg.hubble = false;
+        let off = data(&cfg);
+        assert_eq!(off["enable-hubble"], "false");
+        assert!(!off.keys().any(|k| k.starts_with("hubble-")));
+    }
+
+    #[test]
+    fn policy_secrets_live_in_the_namespace_rbac_grants() {
+        let d = data(&cfg_for(Mode::Overlay));
+        assert_eq!(d["enable-l7-proxy"], "true");
+        assert_eq!(d["policy-secrets-namespace"], SECRETS_NAMESPACE);
+        assert_eq!(d["policy-secrets-only-from-secrets-namespace"], "true");
     }
 
     #[test]

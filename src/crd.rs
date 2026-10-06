@@ -108,9 +108,16 @@ impl Mode {
 #[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CiliumSpec {
-    /// Image tag. Bumping it triggers a rolling upgrade.
+    /// Cilium release, e.g. `1.20.2`. Resolves to an image digest per
+    /// component through the operator's pin table — a tag is never pulled.
+    /// A version the operator has no pin for is rejected unless every image is
+    /// given by digest in `images`. Bumping it triggers a rolling upgrade.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+    /// Per-image overrides, each a full reference pinned by digest
+    /// (`<repository>@sha256:<hex>`). Each one set wins over the pin table.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub images: Option<ImagesSpec>,
 
     /// Image registry/repository prefix, for mirrored or air-gapped installs.
     /// Default `quay.io/cilium`.
@@ -149,6 +156,10 @@ pub struct CiliumSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub load_balancer: Option<LoadBalancerSpec>,
 
+    /// Hubble: the agent's flow server plus the `hubble-relay` aggregation
+    /// front. On by default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hubble: Option<HubbleSpec>,
     /// The standalone `cilium-envoy` DaemonSet. Off by default — Cilium embeds
     /// the proxy in the agent unless you split it out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -304,6 +315,28 @@ pub struct BgpPeer {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
+pub struct ImagesSpec {
+    /// `cilium/cilium`, used by the agent and its init containers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
+    /// `cilium/operator-generic`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operator: Option<String>,
+    /// `cilium/hubble-relay`. Only read when Hubble is enabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hubble_relay: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HubbleSpec {
+    /// Default `true`. Turning it off deletes the relay and the Hubble Services.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct EnvoySpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
@@ -312,8 +345,9 @@ pub struct EnvoySpec {
     ///
     /// Envoy is versioned independently of Cilium — the tag looks like
     /// `v1.36.9-1782267392-<sha>`, which cannot be derived from
-    /// `spec.cilium.version`. The default is pinned to the Cilium 1.19 series;
-    /// running a different Cilium minor means setting this explicitly.
+    /// `spec.cilium.version`. The default is the tag from a Cilium 1.19 install
+    /// and is not pinned by digest (where it should be pinned is #20); set this
+    /// explicitly when running standalone Envoy.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image: Option<String>,
 }

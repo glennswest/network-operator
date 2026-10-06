@@ -17,17 +17,19 @@ use crate::crd::{
     Announce, EncryptionType, HostRouting, IpamMode, Mode, Network, NetworkSpec, RoutingMode,
 };
 
-/// Cilium version installed when the CR does not pin one.
-pub const DEFAULT_CILIUM_VERSION: &str = "1.19.6";
+/// Cilium version installed when the CR does not name one. Must have a row in
+/// [`crate::pins::PINS`]; a test holds it to that.
+pub const DEFAULT_CILIUM_VERSION: &str = "1.20.2";
 /// Image registry prefix used when the CR does not override it.
 pub const DEFAULT_REGISTRY: &str = "quay.io/cilium";
-/// `cilium-envoy` tag paired with the Cilium 1.19 series.
+/// `cilium-envoy` tag for the standalone Envoy DaemonSet (off by default).
 ///
 /// Envoy is versioned independently of Cilium and the tag encodes an Envoy
 /// version, a build number and a commit sha — none of it derivable from
-/// `spec.cilium.version`. Taken from a known-good 1.19.6 install. Bump this
-/// alongside [`DEFAULT_CILIUM_VERSION`], or override per-cluster with
-/// `spec.cilium.envoy.image`.
+/// `spec.cilium.version`. Taken from a known-good 1.19.6 install. It is the one
+/// image still named by tag: stormcos-cilium runs Envoy inside the agent and
+/// pins no `cilium-envoy`, so there is no digest to follow — where it should be
+/// pinned is #20. Override per-cluster with `spec.cilium.envoy.image`.
 pub const DEFAULT_ENVOY_TAG: &str =
     "v1.36.9-1782267392-edeb3f2af56c37c407efa1f63f0b32f595399bbc";
 /// Namespace every rendered object lands in.
@@ -48,6 +50,11 @@ pub struct EffectiveConfig {
 
     pub version: String,
     pub registry: String,
+    /// Image references, pinned by digest (see [`crate::pins`]).
+    pub agent_image: String,
+    pub operator_image: String,
+    /// Empty when Hubble is off and nothing pins it.
+    pub hubble_relay_image: String,
 
     pub ipam: IpamMode,
     pub cluster_pool_ipv4_mask_size: u8,
@@ -69,6 +76,9 @@ pub struct EffectiveConfig {
     pub bgp_local_asn: i64,
     pub bgp_peers: Vec<(String, i64)>,
 
+    /// Hubble flow server in the agent, plus `hubble-relay`.
+    pub hubble: bool,
+
     pub envoy: bool,
     pub envoy_image: String,
 
@@ -77,25 +87,6 @@ pub struct EffectiveConfig {
 }
 
 impl EffectiveConfig {
-    /// The agent/operator image tag family — `v1.19.6`, Cilium's own convention.
-    pub fn image_tag(&self) -> String {
-        if self.version.starts_with('v') {
-            self.version.clone()
-        } else {
-            format!("v{}", self.version)
-        }
-    }
-
-    pub fn agent_image(&self) -> String {
-        format!("{}/cilium:{}", self.registry, self.image_tag())
-    }
-
-    pub fn operator_image(&self) -> String {
-        // The generic operator — no cloud IPAM, which is what cluster-pool and
-        // kubernetes IPAM both use.
-        format!("{}/operator-generic:{}", self.registry, self.image_tag())
-    }
-
     /// Whether any BGP object should be rendered.
     pub fn bgp_enabled(&self) -> bool {
         self.announce == Announce::Bgp
@@ -156,6 +147,23 @@ pub fn resolve(spec: &NetworkSpec) -> Result<EffectiveConfig, ValidationError> {
 
     let bgp = c.and_then(|c| c.load_balancer.as_ref()).and_then(|lb| lb.bgp.as_ref());
 
+    let version = c
+        .and_then(|c| c.version.clone())
+        .unwrap_or_else(|| DEFAULT_CILIUM_VERSION.to_string());
+    let registry = c
+        .and_then(|c| c.registry.clone())
+        .unwrap_or_else(|| DEFAULT_REGISTRY.to_string());
+    let hubble = c
+        .and_then(|c| c.hubble.as_ref())
+        .and_then(|h| h.enabled)
+        .unwrap_or(true);
+    let images = resolve_images(
+        c.and_then(|c| c.images.as_ref()),
+        &version,
+        &registry,
+        hubble,
+    )?;
+
     let cfg = EffectiveConfig {
         network_name: crate::crd::NETWORK_NAME.to_string(),
         network_uid: None,
@@ -164,12 +172,11 @@ pub fn resolve(spec: &NetworkSpec) -> Result<EffectiveConfig, ValidationError> {
         cluster_network: spec.cluster_network.clone(),
         service_network: spec.service_network.clone(),
 
-        version: c
-            .and_then(|c| c.version.clone())
-            .unwrap_or_else(|| DEFAULT_CILIUM_VERSION.to_string()),
-        registry: c
-            .and_then(|c| c.registry.clone())
-            .unwrap_or_else(|| DEFAULT_REGISTRY.to_string()),
+        version,
+        registry: registry.clone(),
+        agent_image: images.agent,
+        operator_image: images.operator,
+        hubble_relay_image: images.hubble_relay,
 
         ipam,
         cluster_pool_ipv4_mask_size: c
@@ -210,6 +217,8 @@ pub fn resolve(spec: &NetworkSpec) -> Result<EffectiveConfig, ValidationError> {
             .map(|b| b.peers.iter().map(|p| (p.address.clone(), p.asn)).collect())
             .unwrap_or_default(),
 
+        hubble,
+
         envoy: c
             .and_then(|c| c.envoy.as_ref())
             .and_then(|e| e.enabled)
@@ -217,12 +226,7 @@ pub fn resolve(spec: &NetworkSpec) -> Result<EffectiveConfig, ValidationError> {
         envoy_image: c
             .and_then(|c| c.envoy.as_ref())
             .and_then(|e| e.image.clone())
-            .unwrap_or_else(|| {
-                let registry = c
-                    .and_then(|c| c.registry.clone())
-                    .unwrap_or_else(|| DEFAULT_REGISTRY.to_string());
-                format!("{registry}/cilium-envoy:{DEFAULT_ENVOY_TAG}")
-            }),
+            .unwrap_or_else(|| format!("{registry}/cilium-envoy:{DEFAULT_ENVOY_TAG}")),
 
         cluster_name: c
             .and_then(|c| c.cluster_name.clone())
@@ -232,6 +236,72 @@ pub fn resolve(spec: &NetworkSpec) -> Result<EffectiveConfig, ValidationError> {
 
     validate(&cfg)?;
     Ok(cfg)
+}
+
+struct Images {
+    agent: String,
+    operator: String,
+    hubble_relay: String,
+}
+
+/// Each image from its explicit override if the CR gives one (which must be a
+/// digest), else from the pin for `version`. A version with no pin is an error
+/// only for an image that is actually needed and not overridden — so a CR can
+/// run an unpinned release by naming every image itself.
+fn resolve_images(
+    overrides: Option<&crate::crd::ImagesSpec>,
+    version: &str,
+    registry: &str,
+    hubble: bool,
+) -> Result<Images, ValidationError> {
+    let pin = crate::pins::lookup(version);
+    let one = |field: &str,
+               explicit: Option<&String>,
+               repo: &str,
+               pinned: Option<&'static str>,
+               needed: bool|
+     -> Result<String, ValidationError> {
+        if let Some(image) = explicit {
+            if !crate::pins::is_digest_ref(image) {
+                return Err(ValidationError::new(
+                    &format!("spec.cilium.images.{field}"),
+                    format!("must be pinned by digest (<repository>@sha256:<hex>), got {image:?}"),
+                ));
+            }
+            return Ok(image.clone());
+        }
+        match pinned {
+            Some(digest) => Ok(format!("{registry}/{repo}@{digest}")),
+            None if !needed => Ok(String::new()),
+            None => Err(ValidationError::new(
+                "spec.cilium.version",
+                format!(
+                    "no digest pin for Cilium {version:?} (pinned: {}); use a pinned version or name \
+                     spec.cilium.images.{field} by digest",
+                    crate::pins::known_versions()
+                ),
+            )),
+        }
+    };
+    Ok(Images {
+        agent: one("agent", overrides.and_then(|o| o.agent.as_ref()), "cilium", pin.map(|p| p.agent), true)?,
+        // The generic operator — no cloud IPAM, which is what cluster-pool and
+        // kubernetes IPAM both use.
+        operator: one(
+            "operator",
+            overrides.and_then(|o| o.operator.as_ref()),
+            "operator-generic",
+            pin.map(|p| p.operator),
+            true,
+        )?,
+        hubble_relay: one(
+            "hubbleRelay",
+            overrides.and_then(|o| o.hubble_relay.as_ref()),
+            "hubble-relay",
+            pin.map(|p| p.hubble_relay),
+            hubble,
+        )?,
+    })
 }
 
 /// The mode table from README.md, as data.
@@ -529,7 +599,7 @@ mod tests {
             mode: Some(IpamMode::Kubernetes),
             cluster_pool_ipv4_mask_size: None,
         });
-        c.version = Some("1.18.0".into());
+        c.version = Some("v1.20.2".into());
 
         let cfg = resolve(&s).unwrap();
         assert_eq!(cfg.mode, Mode::Overlay);
@@ -537,20 +607,74 @@ mod tests {
         assert!(!cfg.kube_proxy_replacement);
         assert_eq!(cfg.encryption, EncryptionType::Wireguard);
         assert_eq!(cfg.ipam, IpamMode::Kubernetes);
-        assert_eq!(cfg.version, "1.18.0");
+        assert_eq!(cfg.version, "v1.20.2");
+    }
+
+    const D: &str = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+
+    #[test]
+    fn the_default_version_resolves_to_pinned_digests_never_a_tag() {
+        let pin = crate::pins::lookup(DEFAULT_CILIUM_VERSION).expect("default must be pinned");
+        let cfg = resolve(&spec(Mode::Overlay)).unwrap();
+        assert_eq!(cfg.agent_image, format!("quay.io/cilium/cilium@{}", pin.agent));
+        assert_eq!(cfg.operator_image, format!("quay.io/cilium/operator-generic@{}", pin.operator));
+        assert_eq!(cfg.hubble_relay_image, format!("quay.io/cilium/hubble-relay@{}", pin.hubble_relay));
+        for i in [&cfg.agent_image, &cfg.operator_image, &cfg.hubble_relay_image] {
+            assert!(crate::pins::is_digest_ref(i), "{i}");
+        }
+
+        // A mirror serves the same bytes, so the digest carries over.
+        let mut s = spec(Mode::Overlay);
+        s.cilium.as_mut().unwrap().registry = Some("mirror.local/cilium".into());
+        let cfg = resolve(&s).unwrap();
+        assert_eq!(cfg.agent_image, format!("mirror.local/cilium/cilium@{}", pin.agent));
     }
 
     #[test]
-    fn image_tag_is_normalized_to_cilium_convention() {
-        let cfg = resolve(&spec(Mode::Overlay)).unwrap();
-        assert_eq!(cfg.agent_image(), "quay.io/cilium/cilium:v1.19.6");
-        assert_eq!(cfg.operator_image(), "quay.io/cilium/operator-generic:v1.19.6");
-
+    fn an_unpinned_version_is_rejected_unless_every_needed_image_is_a_digest() {
         let mut s = spec(Mode::Overlay);
-        s.cilium.as_mut().unwrap().version = Some("v1.18.1".into());
-        s.cilium.as_mut().unwrap().registry = Some("mirror.local/cilium".into());
+        s.cilium.as_mut().unwrap().version = Some("1.19.6".into());
+        assert_eq!(err_field(&s), "spec.cilium.version");
+
+        s.cilium.as_mut().unwrap().images = Some(crate::crd::ImagesSpec {
+            agent: Some(format!("quay.io/cilium/cilium@{D}")),
+            operator: Some(format!("quay.io/cilium/operator-generic@{D}")),
+            hubble_relay: None,
+        });
+        // Hubble is on by default, so its relay needs a digest too...
+        assert_eq!(err_field(&s), "spec.cilium.version");
+        // ...and with Hubble off it does not.
+        s.cilium.as_mut().unwrap().hubble = Some(crate::crd::HubbleSpec { enabled: Some(false) });
         let cfg = resolve(&s).unwrap();
-        assert_eq!(cfg.agent_image(), "mirror.local/cilium/cilium:v1.18.1");
+        assert_eq!(cfg.version, "1.19.6");
+        assert_eq!(cfg.agent_image, format!("quay.io/cilium/cilium@{D}"));
+        assert_eq!(cfg.hubble_relay_image, "");
+    }
+
+    #[test]
+    fn an_image_override_must_be_a_digest_and_wins_over_the_pin() {
+        let mut s = spec(Mode::Overlay);
+        s.cilium.as_mut().unwrap().images = Some(crate::crd::ImagesSpec {
+            agent: Some("quay.io/cilium/cilium:v1.20.2".into()),
+            ..Default::default()
+        });
+        assert_eq!(err_field(&s), "spec.cilium.images.agent");
+
+        s.cilium.as_mut().unwrap().images = Some(crate::crd::ImagesSpec {
+            operator: Some(format!("registry.internal/op@{D}")),
+            ..Default::default()
+        });
+        let cfg = resolve(&s).unwrap();
+        assert_eq!(cfg.operator_image, format!("registry.internal/op@{D}"));
+        assert!(cfg.agent_image.starts_with("quay.io/cilium/cilium@sha256:"));
+    }
+
+    #[test]
+    fn hubble_is_on_unless_switched_off() {
+        assert!(resolve(&spec(Mode::Overlay)).unwrap().hubble);
+        let mut s = spec(Mode::Overlay);
+        s.cilium.as_mut().unwrap().hubble = Some(crate::crd::HubbleSpec { enabled: Some(false) });
+        assert!(!resolve(&s).unwrap().hubble);
     }
 
     fn err_field(s: &NetworkSpec) -> String {

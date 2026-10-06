@@ -3,8 +3,9 @@
 # restarts, which matters once L7 policy or Ingress carries real traffic.
 #
 # Note `envoy.image`: Envoy is versioned independently of Cilium, so the tag
-# cannot be derived from `cilium.version`. The operator pins a default paired
-# with the Cilium 1.19 series; set it explicitly on any other minor.
+# cannot be derived from `cilium.version`. The operator's default is a tag from
+# the Cilium 1.19 series, not a digest — where it should be pinned is #20 — so
+# set `envoy.image` explicitly when running standalone Envoy on 1.20.
 apiVersion: network.storm.io/v1
 kind: Network
 metadata:
@@ -15,7 +16,7 @@ spec:
   clusterNetwork: ["10.244.0.0/16"]
   serviceNetwork: ["10.96.0.0/12"]
   cilium:
-    version: "1.19.6"
+    version: "1.20.2"
     clusterName: "default"
     kubeProxyReplacement: true
     k8sServiceHost: "192.168.8.98"

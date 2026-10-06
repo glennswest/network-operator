@@ -19,9 +19,11 @@ use crate::modes::{EffectiveConfig, NAMESPACE};
 mod agent;
 mod config;
 mod envoy;
+mod hubble;
 mod lb;
 mod operator;
 mod rbac;
+mod services;
 mod util;
 
 /// Field manager for server-side apply. Also how the operator recognises the
@@ -33,9 +35,25 @@ pub const OPERATOR_DEPLOY: &str = "cilium-operator";
 pub const CONFIG_MAP: &str = "cilium-config";
 pub const AGENT_SA: &str = "cilium";
 pub const OPERATOR_SA: &str = "cilium-operator";
+/// Where the L7 proxy reads TLS-interception secrets from.
+pub const SECRETS_NAMESPACE: &str = "cilium-secrets";
+pub const HUBBLE_RELAY: &str = "hubble-relay";
+pub const HUBBLE_RELAY_CONFIG: &str = "hubble-relay-config";
 
 /// Port the agent serves `/healthz` on (host-network, so it is a host port).
 pub const AGENT_HEALTH_PORT: i32 = 9879;
+/// Agent metrics (`prometheus-serve-addr`).
+pub const AGENT_PROMETHEUS_PORT: i32 = 9962;
+/// Operator metrics (`operator-prometheus-serve-addr`).
+pub const OPERATOR_PROMETHEUS_PORT: i32 = 9963;
+/// The L7 proxy's metrics (`proxy-prometheus-port`), behind Service `cilium-agent`.
+pub const ENVOY_METRICS_PORT: i32 = 9964;
+/// Hubble metrics (`hubble-metrics-server`), behind Service `hubble-metrics`.
+pub const HUBBLE_METRICS_PORT: i32 = 9965;
+/// The agent's Hubble server (`hubble-listen-address`), behind `hubble-peer`.
+pub const HUBBLE_PEER_PORT: i32 = 4244;
+/// What the relay serves the flow API on.
+pub const HUBBLE_RELAY_PORT: i32 = 4245;
 
 /// One object to apply, plus the type information the dynamic client needs.
 #[derive(Clone, Debug)]
@@ -64,8 +82,11 @@ pub fn render(cfg: &EffectiveConfig) -> Vec<Rendered> {
     let mut out = Vec::new();
     out.extend(rbac::render(cfg));
     out.push(config::render(cfg));
+    out.extend(services::render(cfg));
     out.push(agent::render(cfg));
     out.push(operator::render(cfg));
+    // The relay dials the agent's socket, so it follows the agent.
+    out.extend(hubble::render(cfg));
     // Envoy after the agent: it blocks on the agent's xDS socket, so there is
     // no point racing it up first.
     out.extend(envoy::render(cfg));
@@ -81,10 +102,14 @@ pub fn render(cfg: &EffectiveConfig) -> Vec<Rendered> {
 ///
 /// Only the conditional objects need listing — the RBAC, config and workloads
 /// are rendered unconditionally and are garbage-collected with the `Network`.
-/// Today that is the LB/L2/BGP CRs only; the conditional `cilium-envoy` objects
-/// are not listed yet, so disabling Envoy leaves them in place.
+/// That is the Hubble relay and Services and the LB/L2/BGP CRs; the conditional
+/// `cilium-envoy` objects are not listed yet, so disabling Envoy leaves them in
+/// place (#12).
 pub fn reapable(cfg: &EffectiveConfig) -> Vec<Rendered> {
-    lb::all_variants(cfg)
+    let mut out = hubble::all(cfg);
+    out.extend(services::hubble(cfg));
+    out.extend(lb::all_variants(cfg));
+    out
 }
 
 /// The subset of [`render`] whose CRDs are owned by `cilium-operator` and so may
@@ -131,6 +156,13 @@ pub fn meta(cfg: &EffectiveConfig, name: &str, extra: &[(&str, &str)]) -> Object
         owner_references: owner_ref(cfg).map(|o| vec![o]),
         ..Default::default()
     }
+}
+
+/// Metadata for an object in a namespace other than kube-system.
+pub fn meta_in(cfg: &EffectiveConfig, namespace: &str, name: &str) -> ObjectMeta {
+    let mut m = meta(cfg, name, &[]);
+    m.namespace = Some(namespace.to_string());
+    m
 }
 
 /// Cluster-scoped object metadata (RBAC, Cilium CRs).
@@ -250,6 +282,29 @@ mod tests {
         // Off-cluster renders (golden tests, dry runs) have no uid to point at.
         let cfg = cfg_for(Mode::Overlay);
         assert!(render(&cfg)[0].obj.metadata.owner_references.is_none());
+    }
+
+    /// Turning Hubble off must delete its objects, not orphan them.
+    #[test]
+    fn hubble_off_leaves_its_objects_reapable() {
+        let on = cfg_for(Mode::Overlay);
+        let mut off = on.clone();
+        off.hubble = false;
+        let rendered: Vec<_> = render(&off).iter().map(|r| r.id()).collect();
+        let reap: Vec<_> = reapable(&off)
+            .iter()
+            .map(|r| r.id())
+            .filter(|id| !rendered.contains(id))
+            .collect();
+        for id in [
+            "ConfigMap/kube-system/hubble-relay-config",
+            "Deployment/kube-system/hubble-relay",
+            "Service/kube-system/hubble-metrics",
+            "Service/kube-system/hubble-peer",
+        ] {
+            assert!(render(&on).iter().any(|r| r.id() == id), "{id} not rendered when on");
+            assert!(reap.contains(&id.to_string()), "{id} not reaped when off");
+        }
     }
 
     #[test]

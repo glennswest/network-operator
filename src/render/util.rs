@@ -3,9 +3,9 @@
 
 use k8s_openapi::api::core::v1::{
     AppArmorProfile, Capabilities, ConfigMapKeySelector, ConfigMapVolumeSource,
-    EmptyDirVolumeSource, EnvVar, EnvVarSource, HTTPGetAction, HostPathVolumeSource,
-    ObjectFieldSelector, PodSecurityContext, Probe, SELinuxOptions, SeccompProfile,
-    SecurityContext, Toleration, Volume, VolumeMount,
+    ContainerPort, EmptyDirVolumeSource, EnvVar, EnvVarSource, HTTPGetAction,
+    HostPathVolumeSource, ObjectFieldSelector, PodSecurityContext, Probe, SELinuxOptions,
+    SeccompProfile, SecurityContext, Toleration, Volume, VolumeMount,
 };
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
 
@@ -67,6 +67,27 @@ pub fn mount_bidirectional(name: &str, path: &str) -> VolumeMount {
     VolumeMount {
         mount_propagation: Some("Bidirectional".to_string()),
         ..mount(name, path)
+    }
+}
+
+/// A mount that sees mounts the host makes under it later (network namespaces
+/// bind-mounted under /var/run/netns), without propagating anything back.
+pub fn mount_host_to_container(name: &str, path: &str) -> VolumeMount {
+    VolumeMount {
+        mount_propagation: Some("HostToContainer".to_string()),
+        ..mount(name, path)
+    }
+}
+
+/// A named TCP port on a host-networked pod, so `hostPort` equals the
+/// container port. The name is what a Service's `targetPort` refers to.
+pub fn host_port(name: &str, port: i32) -> ContainerPort {
+    ContainerPort {
+        name: Some(name.to_string()),
+        container_port: port,
+        host_port: Some(port),
+        protocol: Some("TCP".to_string()),
+        ..Default::default()
     }
 }
 

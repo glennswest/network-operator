@@ -16,7 +16,9 @@
 use k8s_openapi::api::apps::v1::{
     DaemonSet, DaemonSetSpec, DaemonSetUpdateStrategy, RollingUpdateDaemonSet,
 };
-use k8s_openapi::api::core::v1::{Container, EnvVar, PodSpec, PodTemplateSpec, Probe, Volume};
+use k8s_openapi::api::core::v1::{
+    Container, ContainerPort, EnvVar, PodSpec, PodTemplateSpec, Probe, Volume,
+};
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{LabelSelector, ObjectMeta};
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
 use std::collections::BTreeMap;
@@ -24,7 +26,10 @@ use std::collections::BTreeMap;
 use crate::modes::EffectiveConfig;
 
 use super::util::*;
-use super::{common_labels, meta, typed, Rendered, AGENT_DS, AGENT_HEALTH_PORT, AGENT_SA, CONFIG_MAP};
+use super::{
+    common_labels, meta, typed, Rendered, AGENT_DS, AGENT_HEALTH_PORT, AGENT_SA, CONFIG_MAP,
+    AGENT_PROMETHEUS_PORT, ENVOY_METRICS_PORT, HUBBLE_METRICS_PORT, HUBBLE_PEER_PORT,
+};
 
 /// Pod selector label. Immutable on a DaemonSet, so it must never be derived
 /// from anything in the spec.
@@ -102,11 +107,12 @@ fn pod_spec(cfg: &EffectiveConfig) -> PodSpec {
 fn agent_container(cfg: &EffectiveConfig) -> Container {
     Container {
         name: "cilium-agent".to_string(),
-        image: Some(cfg.agent_image()),
+        image: Some(cfg.agent_image.clone()),
         image_pull_policy: Some("IfNotPresent".to_string()),
         command: Some(vec!["cilium-agent".to_string()]),
         args: Some(vec!["--config-dir=/tmp/cilium/config-map".to_string()]),
         env: Some(agent_env(cfg)),
+        ports: Some(agent_ports(cfg)),
         // A cold agent compiles BPF and initialises maps; allow 2 minutes
         // (24 x 5s) before liveness is even consulted.
         startup_probe: Some(Probe {
@@ -140,6 +146,9 @@ fn agent_container(cfg: &EffectiveConfig) -> Container {
             mount("host-proc-sys-net", "/host/proc/sys/net"),
             mount("host-proc-sys-kernel", "/host/proc/sys/kernel"),
             mount("tmp", "/tmp"),
+            // Where the host bind-mounts pod network namespaces; 1.20 reads
+            // them from here rather than through /proc.
+            mount_host_to_container("cilium-netns", "/var/run/cilium/netns"),
         ]
         .into_iter()
         // A standalone Envoy reaches xDS through this directory, so the agent
@@ -148,6 +157,21 @@ fn agent_container(cfg: &EffectiveConfig) -> Container {
         .collect()),
         ..Default::default()
     }
+}
+
+/// Named so the Services in `services.rs` can target them by name, as the
+/// upstream chart does. The Hubble ports exist only while Hubble is on.
+fn agent_ports(cfg: &EffectiveConfig) -> Vec<ContainerPort> {
+    let mut p = vec![host_port("health", AGENT_HEALTH_PORT)];
+    if cfg.hubble {
+        p.push(host_port("peer-service", HUBBLE_PEER_PORT));
+    }
+    p.push(host_port("prometheus", AGENT_PROMETHEUS_PORT));
+    p.push(host_port("envoy-metrics", ENVOY_METRICS_PORT));
+    if cfg.hubble {
+        p.push(host_port("hubble-metrics", HUBBLE_METRICS_PORT));
+    }
+    p
 }
 
 fn agent_env(cfg: &EffectiveConfig) -> Vec<EnvVar> {
@@ -164,7 +188,7 @@ fn agent_env(cfg: &EffectiveConfig) -> Vec<EnvVar> {
 }
 
 fn init_containers(cfg: &EffectiveConfig) -> Vec<Container> {
-    let image = cfg.agent_image();
+    let image = cfg.agent_image.clone();
     vec![
         // Reconciles per-node config overrides (CiliumNodeConfig) into the
         // config dir the agent reads.
@@ -248,6 +272,7 @@ fn init_containers(cfg: &EffectiveConfig) -> Vec<Container> {
             env: Some(vec![
                 env_config("CILIUM_ALL_STATE", "clean-cilium-state", CONFIG_MAP),
                 env_config("CILIUM_BPF_STATE", "clean-cilium-bpf-state", CONFIG_MAP),
+                env_config("WRITE_CNI_CONF_WHEN_READY", "write-cni-conf-when-ready", CONFIG_MAP),
             ]),
             volume_mounts: Some(vec![
                 mount_bidirectional("bpf-maps", "/sys/fs/bpf"),
@@ -284,6 +309,7 @@ fn volumes(cfg: &EffectiveConfig) -> Vec<Volume> {
         host_path("xtables-lock", "/run/xtables.lock", "FileOrCreate"),
         host_path("host-proc-sys-net", "/proc/sys/net", "Directory"),
         host_path("host-proc-sys-kernel", "/proc/sys/kernel", "Directory"),
+        host_path("cilium-netns", "/var/run/netns", "DirectoryOrCreate"),
         config_map_volume("cilium-config-path", CONFIG_MAP),
     ];
     if cfg.envoy {
@@ -482,15 +508,15 @@ mod tests {
     }
 
     #[test]
-    fn version_bump_changes_every_image_and_nothing_else() {
+    fn every_container_runs_the_one_pinned_agent_image() {
         let base = cfg_for(Mode::Overlay);
         let mut bumped = base.clone();
-        bumped.version = "1.20.0".into();
+        bumped.agent_image = "quay.io/cilium/cilium@sha256:00".into();
 
         let before = ds(&base).spec.unwrap().template.spec.unwrap();
         let after = ds(&bumped).spec.unwrap().template.spec.unwrap();
         for c in after.containers.iter().chain(after.init_containers.as_ref().unwrap()) {
-            assert_eq!(c.image.as_deref(), Some("quay.io/cilium/cilium:v1.20.0"));
+            assert_eq!(c.image.as_deref(), Some("quay.io/cilium/cilium@sha256:00"));
         }
         assert_ne!(before.containers[0].image, after.containers[0].image);
     }

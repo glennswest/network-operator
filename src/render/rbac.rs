@@ -4,14 +4,14 @@
 //! agent reads cluster state and owns its own CRs; the operator additionally
 //! installs the Cilium CRDs and garbage-collects identities and endpoints.
 
-use k8s_openapi::api::core::v1::ServiceAccount;
+use k8s_openapi::api::core::v1::{Namespace, ServiceAccount};
 use k8s_openapi::api::rbac::v1::{
     ClusterRole, ClusterRoleBinding, PolicyRule, Role, RoleBinding, RoleRef, Subject,
 };
 
 use crate::modes::{EffectiveConfig, NAMESPACE};
 
-use super::{cluster_meta, meta, typed, Rendered, AGENT_SA, OPERATOR_SA};
+use super::{cluster_meta, meta, meta_in, typed, Rendered, AGENT_SA, OPERATOR_SA, SECRETS_NAMESPACE};
 
 /// Namespaced Role letting the agent read `cilium-config`.
 ///
@@ -21,8 +21,21 @@ use super::{cluster_meta, meta, typed, Rendered, AGENT_SA, OPERATOR_SA};
 /// so do we — the agent has no business reading ConfigMaps cluster-wide.
 const CONFIG_AGENT_ROLE: &str = "cilium-config-agent";
 
+/// The agent reads TLS-interception secrets from `cilium-secrets`; the
+/// operator syncs them in. Both grants are scoped to that namespace, which is
+/// why the agent's ClusterRole secret access does not cover it by design.
+const AGENT_TLS_ROLE: &str = "cilium-tlsinterception-secrets";
+const OPERATOR_TLS_ROLE: &str = "cilium-operator-tlsinterception-secrets";
+
+/// Lets the 1.20 operator manage the ztunnel DaemonSet in kube-system. The
+/// chart renders it unconditionally and so does stormcos; it grants nothing
+/// outside kube-system.
+const OPERATOR_ZTUNNEL_ROLE: &str = "cilium-operator-ztunnel";
+
 pub fn render(cfg: &EffectiveConfig) -> Vec<Rendered> {
     vec![
+        // First: the Roles below live in it.
+        typed(secrets_namespace(cfg)),
         typed(service_account(cfg, AGENT_SA)),
         typed(service_account(cfg, OPERATOR_SA)),
         typed(cluster_role(cfg, AGENT_SA, agent_rules())),
@@ -31,7 +44,52 @@ pub fn render(cfg: &EffectiveConfig) -> Vec<Rendered> {
         typed(binding(cfg, OPERATOR_SA)),
         typed(config_agent_role(cfg)),
         typed(config_agent_role_binding(cfg)),
+        typed(role(cfg, SECRETS_NAMESPACE, AGENT_TLS_ROLE, vec![rule(&[""], &["secrets"], &["get", "list", "watch"])])),
+        typed(role(
+            cfg,
+            SECRETS_NAMESPACE,
+            OPERATOR_TLS_ROLE,
+            vec![rule(&[""], &["secrets"], &["create", "delete", "update", "patch"])],
+        )),
+        typed(role(
+            cfg,
+            NAMESPACE,
+            OPERATOR_ZTUNNEL_ROLE,
+            vec![
+                rule(&["apps"], &["daemonsets"], &["create", "delete", "get", "list", "watch"]),
+                rule(&[""], &["serviceaccounts"], &["get", "list", "watch"]),
+            ],
+        )),
+        typed(role_binding(cfg, SECRETS_NAMESPACE, AGENT_TLS_ROLE, AGENT_SA)),
+        typed(role_binding(cfg, SECRETS_NAMESPACE, OPERATOR_TLS_ROLE, OPERATOR_SA)),
+        typed(role_binding(cfg, NAMESPACE, OPERATOR_ZTUNNEL_ROLE, OPERATOR_SA)),
     ]
+}
+
+fn secrets_namespace(cfg: &EffectiveConfig) -> Namespace {
+    Namespace { metadata: cluster_meta(cfg, SECRETS_NAMESPACE, &[]), ..Default::default() }
+}
+
+fn role(cfg: &EffectiveConfig, namespace: &str, name: &str, rules: Vec<PolicyRule>) -> Role {
+    Role { metadata: meta_in(cfg, namespace, name), rules: Some(rules) }
+}
+
+/// A RoleBinding named after its Role, granting it to a kube-system SA.
+fn role_binding(cfg: &EffectiveConfig, namespace: &str, role: &str, sa: &str) -> RoleBinding {
+    RoleBinding {
+        metadata: meta_in(cfg, namespace, role),
+        role_ref: RoleRef {
+            api_group: "rbac.authorization.k8s.io".to_string(),
+            kind: "Role".to_string(),
+            name: role.to_string(),
+        },
+        subjects: Some(vec![Subject {
+            kind: "ServiceAccount".to_string(),
+            name: sa.to_string(),
+            namespace: Some(NAMESPACE.to_string()),
+            api_group: None,
+        }]),
+    }
 }
 
 fn config_agent_role(cfg: &EffectiveConfig) -> Role {
@@ -214,6 +272,7 @@ mod tests {
         assert_eq!(
             ids,
             vec![
+                "Namespace/cilium-secrets",
                 "ServiceAccount/kube-system/cilium",
                 "ServiceAccount/kube-system/cilium-operator",
                 "ClusterRole/cilium",
@@ -222,6 +281,12 @@ mod tests {
                 "ClusterRoleBinding/cilium-operator",
                 "Role/kube-system/cilium-config-agent",
                 "RoleBinding/kube-system/cilium-config-agent",
+                "Role/cilium-secrets/cilium-tlsinterception-secrets",
+                "Role/cilium-secrets/cilium-operator-tlsinterception-secrets",
+                "Role/kube-system/cilium-operator-ztunnel",
+                "RoleBinding/cilium-secrets/cilium-tlsinterception-secrets",
+                "RoleBinding/cilium-secrets/cilium-operator-tlsinterception-secrets",
+                "RoleBinding/kube-system/cilium-operator-ztunnel",
             ]
         );
     }
@@ -265,6 +330,26 @@ mod tests {
         assert!(has("services/status", "update"), "LB-IPAM cannot publish the VIP");
         assert!(has("services/status", "patch"));
         assert!(has("configmaps", "get"));
+    }
+
+    /// The agent may only read TLS secrets, the operator only write them, and
+    /// only in cilium-secrets.
+    #[test]
+    fn tls_interception_grants_are_split_and_namespaced() {
+        let objs = render(&cfg_for(Mode::Overlay));
+        let role = |name: &str| -> Role {
+            let r = objs.iter().find(|r| r.id() == format!("Role/{SECRETS_NAMESPACE}/{name}")).unwrap();
+            serde_json::from_value(serde_json::to_value(&r.obj).unwrap()).unwrap()
+        };
+        let agent = role(AGENT_TLS_ROLE).rules.unwrap();
+        assert_eq!(agent[0].verbs, vec!["get", "list", "watch"]);
+        let op = role(OPERATOR_TLS_ROLE).rules.unwrap();
+        assert!(!op[0].verbs.contains(&"get".to_string()));
+        assert!(op[0].verbs.contains(&"create".to_string()));
+
+        let rb = role_binding(&cfg_for(Mode::Overlay), SECRETS_NAMESPACE, AGENT_TLS_ROLE, AGENT_SA);
+        assert_eq!(rb.metadata.namespace.as_deref(), Some(SECRETS_NAMESPACE));
+        assert_eq!(rb.subjects.unwrap()[0].namespace.as_deref(), Some(NAMESPACE));
     }
 
     #[test]
