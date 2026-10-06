@@ -125,9 +125,10 @@ until `deploy/crds/` matches).
       operator never overwrites a CRD stamped newer. 8 unit tests incl. a
       stale-`deploy/crds/` guard; sc-build rc=0 (131 tests, clippy clean).
       Not yet run on a cluster.
-- [ ] #12 (2026-10-06, IN PROGRESS) reap envoy: `envoy::all` (the four
-      objects regardless of `cfg.envoy`) joins `render::reapable`; test that
-      envoy-off reaps SA/ConfigMap/DaemonSet/Service. Then docs, sc-build.
+- [x] #12 (2026-10-06) reap envoy: `envoy::all` (the four objects
+      regardless of `cfg.envoy`) joins `render::reapable`; test that
+      envoy-off reaps SA/ConfigMap/DaemonSet/Service and envoy-on reaps none.
+      sc-build rc=0 (132 tests, clippy clean).
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
@@ -144,7 +145,7 @@ until `deploy/crds/` matches).
       network-operator short` on C2NR0Q2, fix what it finds, then medium.
       Expect exit 2 on the Network/nodes checks until stormcentral#55
       (cluster-scoped read for test runs).
-- Open: #12 envoy not reaped — P2; #8 (drift-heal test + must-gather; collector filed as
+- Open: #8 (drift-heal test + must-gather; collector filed as
   stormcos_qa#22), #15, #7 — P3. #9 also carries the envoy tag mismatch
   (1.36.9 here, a tag; stormcos-cilium runs Envoy in the agent, so pins
   none — #20).
