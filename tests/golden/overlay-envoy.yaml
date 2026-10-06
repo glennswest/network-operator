@@ -541,35 +541,10 @@ data:
   policy-secrets-only-from-secrets-namespace: 'true'
   preallocate-bpf-maps: 'false'
   prometheus-serve-addr: :9962
-  proxy-prometheus-port: '9964'
   routing-mode: tunnel
   tunnel-port: '8472'
   tunnel-protocol: vxlan
   write-cni-conf-when-ready: /host/etc/cni/net.d/05-cilium.conflist
----
-apiVersion: v1
-kind: Service
-metadata:
-  annotations:
-    prometheus.io/port: '9964'
-    prometheus.io/scrape: 'true'
-  labels:
-    app.kubernetes.io/managed-by: network-operator
-    app.kubernetes.io/part-of: cilium
-    k8s-app: cilium
-    network.storm.io/owner: cluster
-  name: cilium-agent
-  namespace: kube-system
-spec:
-  clusterIP: None
-  ports:
-  - name: envoy-metrics
-    port: 9964
-    protocol: TCP
-    targetPort: envoy-metrics
-  selector:
-    k8s-app: cilium
-  type: ClusterIP
 ---
 apiVersion: v1
 kind: Service
@@ -689,10 +664,6 @@ spec:
         - containerPort: 9962
           hostPort: 9962
           name: prometheus
-          protocol: TCP
-        - containerPort: 9964
-          hostPort: 9964
-          name: envoy-metrics
           protocol: TCP
         - containerPort: 9965
           hostPort: 9965
