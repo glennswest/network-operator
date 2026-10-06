@@ -114,6 +114,12 @@ object PUT.
       (a node with a ready agent pod and no CiliumNode). Envoy pods join the
       crash-loop check. 9 new unit tests in health.rs; sc-build rc=0 (123 tests). Not yet
       seen on a cluster (needs #16's runs).
+- [ ] #13 (2026-10-06, IN PROGRESS) CRD self-update: `src/register.rs`
+      replaces (GET -> PUT with resourceVersion; exact schema, since
+      rustkube's apply is a merge that would never drop a removed field) the
+      Network CRD when its spec differs, stamped with the operator version
+      annotation; an older operator never overwrites a CRD stamped newer.
+      Pure `decide()` unit-tested. Then README/deck/CHANGELOG, sc-build.
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
