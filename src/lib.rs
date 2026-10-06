@@ -18,6 +18,7 @@ pub mod health;
 pub mod immutable;
 pub mod modes;
 pub mod pins;
+pub mod register;
 pub mod render;
 pub mod status;
 
