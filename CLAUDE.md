@@ -125,6 +125,9 @@ until `deploy/crds/` matches).
       operator never overwrites a CRD stamped newer. 8 unit tests incl. a
       stale-`deploy/crds/` guard; sc-build rc=0 (131 tests, clippy clean).
       Not yet run on a cluster.
+- [ ] #12 (2026-10-06, IN PROGRESS) reap envoy: `envoy::all` (the four
+      objects regardless of `cfg.envoy`) joins `render::reapable`; test that
+      envoy-off reaps SA/ConfigMap/DaemonSet/Service. Then docs, sc-build.
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
