@@ -139,9 +139,10 @@ From the code, working now:
 - **Live changes**: encryption, LB/BGP/L2, MTU, Cilium version (a rolling
   upgrade), kube-proxy replacement, host routing, Envoy, cluster name/ID.
 - **Health** (`src/health.rs`):
-  - `Available` — agent DaemonSet all ready **and** operator ≥ 1 ready
-  - `Progressing` — installing, CRDs deferred, or rolling out
-  - `Degraded` — the pass failed, or a `k8s-app=cilium` pod crash-loops (≥ 3 restarts)
+  - `Available` — agents all ready, operator ≥ 1 ready, Envoy (if on) all
+    ready, `cilium.io` CRDs Established, a `CiliumNode` per ready agent
+  - `Progressing` — installing, CRDs deferred / not Established, or rolling out
+  - `Degraded` — the pass failed, or a `k8s-app=cilium` (or `cilium-envoy`) pod crash-loops (≥ 3 restarts)
 - **rustkube fallbacks** (`apply.rs`, `status.rs`): create/replace when PATCH
   is missing; `/status` patch → PUT → whole-object PUT.
 
@@ -204,8 +205,6 @@ Each is an open issue; the docs say so rather than promise it.
 - Hubble relay across nodes (it reads its own node's socket today).
 - **#12** turning Envoy off should delete the `cilium-envoy` objects.
 - **#13** the operator should update its CRD schema on upgrade.
-- **#14** `Available` should include `CiliumNode` readiness, CRD
-  establishment and `cilium-envoy`.
 - **#15** a health/metrics endpoint for the operator; a validating webhook
   for immutability.
 - Out of scope today: Geneve / tunnel-port override, IPv6 / dual-stack,
@@ -217,7 +216,7 @@ Each is an open issue; the docs say so rather than promise it.
 
 - **Works**: renders, applies, drift-heals and reports for all five modes plus
   standalone Envoy, with stormcos's Cilium objects and digests (parity test).
-  114 tests (unit + golden + parity) pass under `sc-build`.
+  123 tests (unit + golden + parity) pass under `sc-build`.
 - **Proven on hardware**: 2026-07-20, rustkube v0.7.29 + fastetcd v1.0.4 +
   rustkube-node v0.2.0 — an `overlay` install came fully up (agent OK, BPF
   loaded, `CiliumNode` created, pods Running first try). That was Cilium

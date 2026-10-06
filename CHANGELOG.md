@@ -4,6 +4,12 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-06
+- **feat:** health rollup (#14): `Available` now also requires the
+  `cilium-envoy` DaemonSet ready when Envoy is enabled (`EnvoyNotReady`),
+  every `cilium.io` CRD `Established` (`CiliumCRDsNotEstablished`, also
+  `Progressing=WaitingForCiliumCRDs`), and a `CiliumNode` for every node with
+  a ready agent (`CiliumNodesMissing`). Envoy pods join the crash-loop check
+  and the rollout in `Progressing`. README health table and deck updated.
 - **docs:** CLAUDE.md #9 done; README notes v0.3.0 has no release assets
   (#18); deck test count 114.
 

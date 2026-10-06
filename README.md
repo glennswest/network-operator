@@ -222,12 +222,16 @@ workloads that are actually running.
 
 | Condition | Rule |
 |---|---|
-| `Available=True` | `DaemonSet/cilium` has ≥ 1 desired pod and all are ready, **and** `cilium-operator` has ≥ 1 ready replica. Otherwise False with `Installing`, `NoSchedulableNodes`, `AgentNotReady` or `OperatorNotReady`. |
-| `Progressing=True` | workloads not created yet (`Installing`), Cilium CRs deferred (`WaitingForCiliumCRDs`), or either workload not fully ready *and* updated (`RolloutInProgress`). |
-| `Degraded=True` | this pass failed (`ReconcileFailed`, with the error), or a pod labelled `k8s-app=cilium` is in `CrashLoopBackOff` with ≥ 3 restarts (`PodsCrashLooping`). |
+| `Available=True` | all of: `DaemonSet/cilium` has ≥ 1 desired pod and all are ready; `cilium-operator` has ≥ 1 ready replica; with Envoy enabled, `DaemonSet/cilium-envoy` exists, has ≥ 1 desired pod and all are ready; every `cilium.io` CRD is `Established=True`; and every node with a ready agent pod has a `CiliumNode`. Otherwise False with the first failing reason, in that order: `Installing`, `NoSchedulableNodes`, `AgentNotReady`, `OperatorNotReady`, `EnvoyNotReady`, `CiliumCRDsNotEstablished`, `CiliumNodesMissing`. |
+| `Progressing=True` | workloads (Envoy included, when enabled) not created yet (`Installing`), Cilium CRs deferred or a `cilium.io` CRD not yet Established (`WaitingForCiliumCRDs`), or a workload not fully ready *and* updated (`RolloutInProgress`). |
+| `Degraded=True` | this pass failed (`ReconcileFailed`, with the error), or a pod labelled `k8s-app=cilium` (or `k8s-app=cilium-envoy`, with Envoy enabled) is in `CrashLoopBackOff` with ≥ 3 restarts (`PodsCrashLooping`). |
 
-`cilium-envoy`, `CiliumNode` objects and CRD establishment are **not** part
-of the health rollup today.
+`CiliumNode` is checked by name against the nodes running a ready agent, so
+a stale `CiliumNode` for a removed node does not matter; if the `CiliumNode`
+kind is not registered at all, every such node counts as missing. Envoy is
+observed only while `envoy.enabled` — a disabled one's leftover DaemonSet
+(#12) is ignored — and not at all on a pass whose spec failed to resolve
+(whether it is wanted is then unknown).
 
 ### rustkube compatibility
 
@@ -442,8 +446,6 @@ What earlier versions of this README promised or implied, and the code does
 not do yet:
 
 - Immutability is enforced by the reconciler, **not** a validating webhook (#15).
-- `Available` does not look at `CiliumNode` readiness, Cilium CRD
-  establishment, or `cilium-envoy` (#14).
 - Turning `envoy.enabled` off does **not** delete the `cilium-envoy` objects (#12);
   only the LB/L2/BGP CRs are reaped.
 - The CRD is registered create-if-absent, so upgrading the operator does not

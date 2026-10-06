@@ -108,11 +108,12 @@ object PUT.
       envoy both claimed host port 9964. Split out: k8sServiceHost -> #23
       (needs-owner). v0.3.0 tagged; no release assets (no build path keeps
       them; pending #18).
-- [ ] #14 (2026-10-06, IN PROGRESS) health rollup: `Available` gains
-      `EnvoyNotReady` (cilium-envoy DS when enabled), `CiliumCRDsNotEstablished`
-      (cilium.io CRDs with Established!=True), `CiliumNodesMissing` (a node
-      running an agent pod with no CiliumNode). Snapshot stays pure; envoy
-      pods join the crash-loop check. Then README/deck/CHANGELOG, sc-build.
+- [x] #14 (2026-10-06) health rollup: `Available` gains `EnvoyNotReady`
+      (cilium-envoy DS when enabled), `CiliumCRDsNotEstablished` (cilium.io
+      CRDs with Established!=True; rustkube sets it), `CiliumNodesMissing`
+      (a node with a ready agent pod and no CiliumNode). Envoy pods join the
+      crash-loop check. 10 unit tests in health.rs; sc-build rc=0. Not yet
+      seen on a cluster (needs #16's runs).
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
@@ -129,8 +130,7 @@ object PUT.
       network-operator short` on C2NR0Q2, fix what it finds, then medium.
       Expect exit 2 on the Network/nodes checks until stormcentral#55
       (cluster-scoped read for test runs).
-- Open: #12 envoy not reaped, #13 CRD never updated, #14 health
-  rollup — P2; #8 (drift-heal test + must-gather; collector filed as
+- Open: #12 envoy not reaped, #13 CRD never updated — P2; #8 (drift-heal test + must-gather; collector filed as
   stormcos_qa#22), #15, #7 — P3. #9 also carries the envoy tag mismatch
   (1.36.9 here, a tag; stormcos-cilium runs Envoy in the agent, so pins
   none — #20).
