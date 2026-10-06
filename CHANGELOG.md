@@ -4,6 +4,12 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-06
+- **feat:** the operator updates the `Network` CRD on start (#13) instead of
+  create-if-absent: replaced (GET + PUT, exact schema) when its spec or the
+  new `network.storm.io/operator-version` stamp differs; a CRD stamped by a
+  newer operator is left alone so a rollback cannot strip fields.
+  `src/register.rs`; `crdgen` and `deploy/crds/` carry the stamp, and a unit
+  test fails if `deploy/crds/` is stale.
 - **feat:** health rollup (#14): `Available` now also requires the
   `cilium-envoy` DaemonSet ready when Envoy is enabled (`EnvoyNotReady`),
   every `cilium.io` CRD `Established` (`CiliumCRDsNotEstablished`, also

@@ -24,8 +24,8 @@ slide deck of the same material is in [`docs/presentation.md`](docs/presentation
 
 - **One binary, two commands:** `run` (the controller, the default) and
   `dry-run` (render a `Network` manifest to YAML, no cluster).
-- **Self-registers its CRD** on start (`Network.network.storm.io/v1`,
-  create-if-absent — see [Known gaps](#known-gaps)).
+- **Self-registers its CRD** on start (`Network.network.storm.io/v1`), and
+  updates its schema when the operator is upgraded (`src/register.rs`).
 - **Resolves** the CR: `spec.mode` supplies defaults, any field set under
   `spec.cilium` overrides them, and the result is validated as a whole
   (`src/modes.rs`). A spec that fails validation is not applied; the CR goes
@@ -102,7 +102,17 @@ is listed under [Known gaps](#known-gaps).
 **cluster-scoped**, conventionally named `cluster`, with a `/status`
 subresource. `kubectl get net` prints Mode, Version, Available, Progressing,
 Degraded. The CRD in `deploy/crds/` is generated from `src/crd.rs`
-(`make crds`) — never hand-edit it.
+(`make crds`) — never hand-edit it; a unit test fails if it is stale.
+
+**Upgrades** (`src/register.rs`): the CRD carries the annotation
+`network.storm.io/operator-version` naming the operator that wrote it. On
+start the operator creates the CRD if absent, and otherwise replaces it
+(GET, then PUT with its `resourceVersion` — an exact replace, since rustkube's
+apply is a merge that would keep a removed property) whenever its spec or
+stamp differs. A CRD stamped by a **newer** operator is left alone, with a
+warning, so rolling the operator back does not strip a newer schema's
+fields. An unstamped CRD (an older `deploy/crds/`, or an operator from before #13)
+counts as older and is replaced.
 
 ```yaml
 apiVersion: network.storm.io/v1
@@ -385,7 +395,7 @@ stormcentral test run network-operator short --url http://stormcentral.g8.lo
   ```
 
   Applying `deploy/crds/` first is optional — the operator registers the CRD
-  if absent — but it is how an existing CRD's schema gets updated.
+  if absent and updates an older one on start.
 - **Golden / stormcos**: there is **no golden** for network-operator —
   stormcentral's component registry and stormcos `deploy/build-goldens.sh`
   do not list it. Whether it should get one is an owner decision,
@@ -448,8 +458,6 @@ not do yet:
 - Immutability is enforced by the reconciler, **not** a validating webhook (#15).
 - Turning `envoy.enabled` off does **not** delete the `cilium-envoy` objects (#12);
   only the LB/L2/BGP CRs are reaped.
-- The CRD is registered create-if-absent, so upgrading the operator does not
-  update an existing CRD's schema; apply `deploy/crds/` on upgrade (#13).
 - The operator exposes no health or metrics endpoint (#15).
 - The tunnel protocol is VXLAN only (no Geneve, no port override); IPv6 and
   dual-stack are not supported; IPsec is rejected.

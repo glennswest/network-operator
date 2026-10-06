@@ -186,10 +186,11 @@ only), 4244 Hubble, 9965 Hubble metrics; cilium-operator 9234 (loopback),
 - **Starts** from `deploy/operator.yaml`: 1-replica `Recreate` Deployment in
   `kube-system`, **hostNetwork**, control-plane nodes, `system-cluster-critical`
   — so it runs on a node with no CNI and brings Cilium up underneath itself.
-  Registers its own CRD if absent.
+  Registers its own CRD, and updates its schema on upgrade (never over a
+  newer operator's).
 - **Updated**: Cilium by editing `spec.cilium.version`; the operator by loading
-  a new archive and reapplying `deploy/operator.yaml` **and** `deploy/crds/`
-  (the CRD is not self-updated — #13).
+  a new archive and reapplying `deploy/operator.yaml` — it brings its CRD
+  schema up to date itself.
 - **Built and tested** with `sc-build` on the build box, never as root; on a
   running cluster by the `test/` container (short / medium / long suites),
   which stormcentral runs on every test machine.
@@ -204,7 +205,6 @@ Each is an open issue; the docs say so rather than promise it.
   stormcos does), resolved at reconcile time, or still required.
 - Hubble relay across nodes (it reads its own node's socket today).
 - **#12** turning Envoy off should delete the `cilium-envoy` objects.
-- **#13** the operator should update its CRD schema on upgrade.
 - **#15** a health/metrics endpoint for the operator; a validating webhook
   for immutability.
 - Out of scope today: Geneve / tunnel-port override, IPv6 / dual-stack,
@@ -216,7 +216,7 @@ Each is an open issue; the docs say so rather than promise it.
 
 - **Works**: renders, applies, drift-heals and reports for all five modes plus
   standalone Envoy, with stormcos's Cilium objects and digests (parity test).
-  123 tests (unit + golden + parity) pass under `sc-build`.
+  131 tests (unit + golden + parity) pass under `sc-build`.
 - **Proven on hardware**: 2026-07-20, rustkube v0.7.29 + fastetcd v1.0.4 +
   rustkube-node v0.2.0 — an `overlay` install came fully up (agent OK, BPF
   loaded, `CiliumNode` created, pods Running first try). That was Cilium

@@ -41,6 +41,8 @@ The pipeline is `crd -> modes -> render -> apply`, and everything before
 - `tests/parity.rs` + `tests/fixtures/stormcos/` — the render against a
   verbatim copy of stormcos's Cilium manifests (#9). Refresh both, and
   `pins.rs`, when stormcos-cilium moves its pin.
+- `src/register.rs` — the Network CRD: created, or replaced on upgrade,
+  stamped with the operator version; never over a newer stamp (#13).
 - `src/apply.rs` — server-side apply, with the rustkube fallbacks.
 - `src/health.rs` — `observe` reads, `conditions` decides. Keep `conditions`
   pure.
@@ -81,7 +83,9 @@ object PUT.
 
 `0.3.0` (tag `v0.3.0`). Version locations, all must match: `Cargo.toml`,
 `deploy/operator.yaml` (image tag), the OCI-archive example in `README.md`.
-`Cargo.lock` is committed (the image builds `--locked`).
+`Cargo.lock` is committed (the image builds `--locked`). A version bump
+also needs `make crds` (the CRD carries the version stamp; a unit test fails
+until `deploy/crds/` matches).
 
 ## Work plan
 
@@ -114,12 +118,13 @@ object PUT.
       (a node with a ready agent pod and no CiliumNode). Envoy pods join the
       crash-loop check. 9 new unit tests in health.rs; sc-build rc=0 (123 tests). Not yet
       seen on a cluster (needs #16's runs).
-- [ ] #13 (2026-10-06, IN PROGRESS) CRD self-update: `src/register.rs`
-      replaces (GET -> PUT with resourceVersion; exact schema, since
-      rustkube's apply is a merge that would never drop a removed field) the
-      Network CRD when its spec differs, stamped with the operator version
-      annotation; an older operator never overwrites a CRD stamped newer.
-      Pure `decide()` unit-tested. Then README/deck/CHANGELOG, sc-build.
+- [x] #13 (2026-10-06) CRD self-update: `src/register.rs` replaces (GET ->
+      PUT with resourceVersion; exact schema, since rustkube's apply is a
+      merge that would never drop a removed field) the Network CRD when its
+      spec or `network.storm.io/operator-version` stamp differs; an older
+      operator never overwrites a CRD stamped newer. 8 unit tests incl. a
+      stale-`deploy/crds/` guard; sc-build rc=0 (131 tests, clippy clean).
+      Not yet run on a cluster.
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
@@ -136,7 +141,7 @@ object PUT.
       network-operator short` on C2NR0Q2, fix what it finds, then medium.
       Expect exit 2 on the Network/nodes checks until stormcentral#55
       (cluster-scoped read for test runs).
-- Open: #12 envoy not reaped, #13 CRD never updated — P2; #8 (drift-heal test + must-gather; collector filed as
+- Open: #12 envoy not reaped — P2; #8 (drift-heal test + must-gather; collector filed as
   stormcos_qa#22), #15, #7 — P3. #9 also carries the envoy tag mismatch
   (1.36.9 here, a tag; stormcos-cilium runs Envoy in the agent, so pins
   none — #20).
