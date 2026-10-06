@@ -4,6 +4,10 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-06
+- **fix:** turning `spec.cilium.envoy.enabled` off now deletes the
+  `cilium-envoy` ServiceAccount, ConfigMap, DaemonSet and Service (#12);
+  they joined `render::reapable`. README reconcile-loop step 4 lists
+  everything that is reaped.
 - **feat:** the operator updates the `Network` CRD on start (#13) instead of
   create-if-absent: replaced (GET + PUT, exact schema) when its spec or the
   new `network.storm.io/operator-version` stamp differs; a CRD stamped by a

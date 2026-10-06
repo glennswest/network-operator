@@ -204,7 +204,6 @@ Each is an open issue; the docs say so rather than promise it.
 - **#23** (decision) `k8sServiceHost`: optional and kubelet-injected (as
   stormcos does), resolved at reconcile time, or still required.
 - Hubble relay across nodes (it reads its own node's socket today).
-- **#12** turning Envoy off should delete the `cilium-envoy` objects.
 - **#15** a health/metrics endpoint for the operator; a validating webhook
   for immutability.
 - Out of scope today: Geneve / tunnel-port override, IPv6 / dual-stack,

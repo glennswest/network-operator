@@ -220,7 +220,9 @@ every violation, and does not move the baseline.
 1. **Resolve** the spec (mode defaults + overrides + validation).
 2. **Check immutability** against `status.applied*`.
 3. **Render and apply** every object in order (`src/apply.rs`).
-4. **Reap** LB/L2/BGP CRs this config no longer renders.
+4. **Reap** the conditional objects this config no longer renders: the Hubble
+   relay and Services, the standalone `cilium-envoy` objects, and the LB/L2/BGP
+   CRs (`render::reapable`).
 5. **Observe** health and write status, including the new `applied*`.
 
 Requeue: 60 s after success, 10 s while Cilium CRs are deferred, 15 s after
@@ -239,8 +241,8 @@ workloads that are actually running.
 `CiliumNode` is checked by name against the nodes running a ready agent, so
 a stale `CiliumNode` for a removed node does not matter; if the `CiliumNode`
 kind is not registered at all, every such node counts as missing. Envoy is
-observed only while `envoy.enabled` — a disabled one's leftover DaemonSet
-(#12) is ignored — and not at all on a pass whose spec failed to resolve
+observed only while `envoy.enabled` — a disabled one's DaemonSet is being
+reaped, so it is ignored — and not at all on a pass whose spec failed to resolve
 (whether it is wanted is then unknown).
 
 ### rustkube compatibility
@@ -456,8 +458,6 @@ What earlier versions of this README promised or implied, and the code does
 not do yet:
 
 - Immutability is enforced by the reconciler, **not** a validating webhook (#15).
-- Turning `envoy.enabled` off does **not** delete the `cilium-envoy` objects (#12);
-  only the LB/L2/BGP CRs are reaped.
 - The operator exposes no health or metrics endpoint (#15).
 - The tunnel protocol is VXLAN only (no Geneve, no port override); IPv6 and
   dual-stack are not supported; IPsec is rejected.
