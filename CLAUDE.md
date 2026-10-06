@@ -142,9 +142,10 @@ until `deploy/crds/` matches).
       clippy clean) and `test/` at dca0b38 (25 tests, clippy). Not yet run on
       a cluster. Webhook half split to decision #24 (needs-owner: cert
       source, reachability before the CNI, failurePolicy).
-- [ ] #7 (2026-10-06) release profile: opt-level 3, thin LTO, codegen-units 1,
+- [x] #7 (2026-10-06) release profile: opt-level 3, thin LTO, codegen-units 1,
       strip = "debuginfo" (symbols kept for readable reconcile-loop panics,
-      fastetcd's choice). Verify with a release sc-build + `file`/size.
+      fastetcd's choice). sc-build at 86b327b: build/test/clippy pass;
+      release binary 11.1 MiB (was 14.3), 0 .debug_* sections, .symtab kept.
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
@@ -163,7 +164,7 @@ until `deploy/crds/` matches).
       (cluster-scoped read for test runs).
 - Open: #8 (drift-heal test + must-gather; collector filed as
   stormcos_qa#22; 2026-10-06 nothing left here — proposed after
-  decision #19, which picks where drift-heal runs), #7 — P3. #9 also carries the envoy tag mismatch
+  decision #19, which picks where drift-heal runs) — P3. #9 also carries the envoy tag mismatch
   (1.36.9 here, a tag; stormcos-cilium runs Envoy in the agent, so pins
   none — #20).
   stormcos does NOT ship or preload this operator (#21): its
