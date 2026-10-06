@@ -133,6 +133,13 @@ until `deploy/crds/` matches).
       `[router]` alone, stormcos build-goldens writes only the router; its
       VIP half is unshipped). README "where it sits" + deck fixed (12bc5a5);
       sc-build rc=0 (build, test, clippy).
+- [ ] #15 (2026-10-06, in progress) health/metrics listener: `src/metrics.rs`
+      (`/healthz`, `/readyz`, `/metrics` Prometheus text: reconcile counts by
+      result/reason, last success, build info) on `--health-addr`
+      (default `0.0.0.0:9446`, host network — clear of every Cilium port),
+      liveness/readiness probes in `deploy/operator.yaml`. The validating
+      webhook half needs serving certs + rustkube admission support: split
+      to its own `Decide:` issue for the owner, not guessed.
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
