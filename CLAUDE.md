@@ -91,6 +91,20 @@ object PUT.
       kube-system names we render). README/deck/CLAUDE.md fixed (5e70545),
       conflict warning added, sc-build rc=0; premise change posted on #18
       and stormcentral#52.
+- [ ] #9 (P1, in progress 2026-10-06) render parity with stormcos's Cilium
+      manifests (stormcos 3dcf6d6 `deploy/manifests/10…75`: now **24** objects,
+      not 18). Steps: (a) `src/pins.rs` version -> linux/amd64 digests from
+      stormcos-cilium `pinned.txt` (1.20.2); `spec.cilium.images.*` overrides
+      must be digests; unknown version without digests is rejected; envoy
+      stays a tag (#20). (b) default 1.20.2; agent/operator shaped like the
+      1.20.2 render (named ports, cilium-netns, WRITE_CNI_CONF_WHEN_READY).
+      (c) Hubble: `spec.cilium.hubble.enabled` (default true) -> hubble config
+      keys, Services hubble-peer/hubble-metrics, hubble-relay ConfigMap +
+      Deployment (stormcos's unix-socket shape), reaped when off. (d) always:
+      Namespace cilium-secrets + 2 tlsinterception Roles/RoleBindings (L7 proxy
+      is always on), ztunnel Role/RoleBinding, Service cilium-agent, metrics
+      keys. (e) parity test vs stormcos's 24 ids + ConfigMap overlap fixture.
+      k8sServiceHost-at-reconcile is an owner decision -> its own issue.
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
