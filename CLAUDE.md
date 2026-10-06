@@ -112,7 +112,7 @@ object PUT.
       (cilium-envoy DS when enabled), `CiliumCRDsNotEstablished` (cilium.io
       CRDs with Established!=True; rustkube sets it), `CiliumNodesMissing`
       (a node with a ready agent pod and no CiliumNode). Envoy pods join the
-      crash-loop check. 10 unit tests in health.rs; sc-build rc=0. Not yet
+      crash-loop check. 9 new unit tests in health.rs; sc-build rc=0 (123 tests). Not yet
       seen on a cluster (needs #16's runs).
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
