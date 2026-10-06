@@ -4,6 +4,10 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-06
+- **build:** `[profile.release]` completed (#7): `opt-level = 3`,
+  `codegen-units = 1` and `strip = "debuginfo"` join `lto = "thin"`, so the
+  release binary no longer ships debuginfo; symbols stay, so panics from the
+  reconcile loop still name their functions.
 - **feat:** the operator serves `/healthz`, `/readyz` and `/metrics` (#15) on
   `--health-addr` / `HEALTH_ADDR` (default `0.0.0.0:9446`, host network):
   reconcile passes by result, failures by reason, last success time and
