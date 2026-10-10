@@ -146,6 +146,13 @@ until `deploy/crds/` matches).
       strip = "debuginfo" (symbols kept for readable reconcile-loop panics,
       fastetcd's choice). sc-build at 86b327b: build/test/clippy pass;
       release binary 11.1 MiB (was 14.3), 0 .debug_* sections, .symtab kept.
+- [ ] #19 (2026-10-10) owner approved option 1 (2026-10-09): an opt-in
+      disruptive suite. Plan: `test/src/drift.rs`, suite `drift-heal`
+      (declared in a new `test/requires.toml` with `budget_secs` and
+      `kube_system_writes = ["ConfigMap/cilium-config", "DaemonSet/cilium"]`):
+      flip `debug` in cilium-config and wait for it back; orphan-delete
+      DaemonSet/cilium and wait for a new one, Ready; restore from the
+      snapshot if not healed. Runner side is stormcentral#501 (propose after).
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
