@@ -1,0 +1,42 @@
+# What network-operator-test's suites need beyond the runner's namespace-only
+# Role (stormcentral docs/test-standard.md). Every suite runs as an ordinary
+# pod on the pod network: no host network, no privilege, no host paths.
+#
+# cluster_read (stormcentral#55): the Network CR (every suite) and nodes
+# (medium's cross-node, long's capacity). kube_system_writes is the opt-in
+# disruptive class (network-operator#19, stormcentral#501), not read by the
+# runner yet: until it is, drift-heal's writes are refused and it reports
+# could-not-run (exit 2), never a pass.
+
+[short]
+cluster_read = [
+  { apiGroup = "network.storm.io", resource = "networks" },
+]
+
+[medium]
+cluster_read = [
+  { apiGroup = "network.storm.io", resource = "networks" },
+  { apiGroup = "", resource = "nodes" },
+]
+
+[long]
+cluster_read = [
+  { apiGroup = "network.storm.io", resource = "networks" },
+  { apiGroup = "", resource = "nodes" },
+]
+
+[drift-heal]
+# Disruptive (#19): network-operator's drift-heal on its own objects. Flips
+# `debug` in ConfigMap/cilium-config and orphan-deletes DaemonSet/cilium
+# (its pods keep running), then waits for the operator to put both back.
+# Run serially, on test machines only; the runner snapshots the named
+# objects before the run and restores them after it, pass or fail.
+# Run on request, not in the release gates.
+budget_secs = 600
+cluster_read = [
+  { apiGroup = "network.storm.io", resource = "networks" },
+]
+kube_system_writes = [
+  "ConfigMap/cilium-config",
+  "DaemonSet/cilium",
+]

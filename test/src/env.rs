@@ -29,6 +29,7 @@ impl Env {
         let budget = match suite.as_str() {
             "medium" => 1800,
             "long" => 8 * 3600,
+            "drift-heal" => 600,
             _ => 120,
         };
         Env {

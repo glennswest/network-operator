@@ -4,8 +4,10 @@
 //!
 //! Everything the suites create is in the run's namespace and labelled
 //! `storm.io/test-run=<run id>`. The only cluster-scoped calls are reads (the
-//! `Network` CR, `nodes`); the runner's Role does not grant them yet
-//! (stormcentral#55), so a 403 is kept apart and reported as could-not-run.
+//! `Network` CR, `nodes`), declared as `cluster_read` in `test/requires.toml`
+//! (stormcentral#55). The `drift-heal` suite alone also writes two named
+//! `kube-system` objects (`src/drift.rs`, stormcentral#501). A 403 is kept
+//! apart and reported as could-not-run.
 
 use std::time::{Duration, Instant};
 
@@ -30,7 +32,7 @@ pub enum Error {
 impl Error {
     pub fn msg(&self) -> String {
         match self {
-            Error::Forbidden(m) => format!("{m} — the test's ServiceAccount is not granted this read (stormcentral#55)"),
+            Error::Forbidden(m) => format!("{m} — the test's ServiceAccount is not granted this (test/requires.toml declares it; stormcentral#55)"),
             Error::Other(m) => m.clone(),
         }
     }
@@ -134,6 +136,15 @@ impl Api {
     /// Delete now; already gone is fine.
     pub async fn delete(&self, path: &str) -> Result<(), Error> {
         let p = format!("{path}?gracePeriodSeconds=0&propagationPolicy=Background");
+        match self.call(Method::DELETE, &p, None).await? {
+            (st, _) if st == 404 || ok(st) => Ok(()),
+            (st, v) => Err(Error::Other(format!("delete {path}: {st} {}", msg(&v)))),
+        }
+    }
+
+    /// Delete, leaving the dependents (a DaemonSet's pods) running.
+    pub async fn delete_orphan(&self, path: &str) -> Result<(), Error> {
+        let p = format!("{path}?propagationPolicy=Orphan");
         match self.call(Method::DELETE, &p, None).await? {
             (st, _) if st == 404 || ok(st) => Ok(()),
             (st, v) => Err(Error::Other(format!("delete {path}: {st} {}", msg(&v)))),
