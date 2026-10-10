@@ -178,7 +178,7 @@ async fn daemonset(env: &Env, api: &Api) -> Outcome {
     }
     let t = Instant::now();
     let deadline = t + env.wait(HEAL, Duration::from_secs(60));
-    let mut last = String::from("not listed");
+    let mut last;
     loop {
         match api.get(&path).await {
             Ok(Some(v)) => match healed(&v, &old_uid) {
