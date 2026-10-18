@@ -18,6 +18,7 @@ server that answers with its own pod name), so nothing else is pulled.
 | `short` | < 2 min | `network-status`, `pod-ip`, `pod-to-pod`, `service`, `cleanup` |
 | `medium` | < 30 min | everything in short, then `network-config`, `service-scale`, `backend-loss`, `network-policy`, `cross-node`, `load-balancer`, `endpoints-reaped`, `cleanup-all` |
 | `long` | the night window (8 h unless `STORM_TIMEOUT`) | `network-status`, `capacity`, `wave-1` … `wave-N`, `trend`, `vm-waves` (skip), `network-status-end`, `cleanup` |
+| `drift-heal` | 600 s (declared) | **disruptive**, on request only: `network-status`, `configmap-drift`, `daemonset-delete`, `network-status-end` |
 
 - **network-status**: the `Network` (named `cluster`, else the only one)
   has `Available=True`, `Degraded` not `True`, and `observedGeneration`
@@ -61,6 +62,34 @@ server that answers with its own pod name), so nothing else is pulled.
 - **vm-waves** (long): always a skip. network-operator's workload is pod
   networking; VM networking is stormvm's suite.
 
+### drift-heal: the disruptive suite (#19)
+
+The operator's core claim is that it puts its objects back when someone
+changes or deletes them (`src/controller.rs` watches them, with a 60 s
+resync behind the watch). That is about `kube-system` objects, which no
+ordinary test may touch, so it is its own suite, declared in
+`test/requires.toml` with `kube_system_writes` (the owner's option 1 on
+#19; runner side [stormcentral#501](https://github.com/glennswest/stormcentral/issues/501)):
+run serially, on test machines only, never on a shared cluster, and the
+runner snapshots and restores the named objects around it.
+
+- **network-status**: the install must be healthy first; otherwise the
+  two drift tests are skipped (drift-heal is measured from a healthy one).
+- **configmap-drift**: `debug` in `ConfigMap/cilium-config` is set to the
+  other boolean by hand (a PUT). Pass when it is back within 150 s; the
+  detail carries the heal time.
+- **daemonset-delete**: `DaemonSet/cilium` is deleted with
+  `propagationPolicy=Orphan`, so the agent pods keep running and the
+  network (and this Job) stays up. Pass when a DaemonSet with a new uid has
+  observed its generation and every scheduled pod is ready, within 150 s.
+- **network-status-end**: the `Network` is `Available` and current again
+  (polled up to 90 s).
+
+A drift that is not healed is put back by the test itself before it fails
+(the `debug` value restored; a missing DaemonSet created again from its
+snapshot). Until the runner grants `kube_system_writes`, the writes answer
+403 and the tests report `could not run` (exit 2), never a pass.
+
 If network-operator is **not deployed** (no `networks.network.storm.io`
 served), every test after `network-status` is a skip: the CNI there is not
 this component's to test.
@@ -72,12 +101,14 @@ this component's to test.
   and is deleted at the end of the suite (and by the runner with the
   namespace).
 - **Cluster-scoped read**: `get`/`list` on `networks.network.storm.io`
-  (every suite) and on `nodes` (`cross-node`, `capacity`). stormcentral's
-  runner does not grant any yet
+  (every suite) and on `nodes` (`cross-node`, `capacity`), declared as
+  `cluster_read` in `test/requires.toml`
   ([stormcentral#55](https://github.com/glennswest/stormcentral/issues/55)).
-  Until it does, those tests report `could not run` and the run exits
-  **2**, never a pass. The pod tests still run. In long, the waves then
-  use a fixed 20 pods.
+  If the runner does not grant one, those tests report `could not run` and
+  the run exits **2**, never a pass. The pod tests still run. In long, the
+  waves then use a fixed 20 pods.
+- **kube-system writes** (`drift-heal` only): get/update/delete on
+  `ConfigMap/cilium-config` and `DaemonSet/cilium`, by name.
 - No privileges, no host access, no fixed node, device or core count.
 
 ### Environment (`src/env.rs`)

@@ -3,6 +3,18 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-10-10
+- **feat:** test container: `drift-heal`, an opt-in disruptive suite (#19,
+  owner's option 1). It flips `debug` in `kube-system/cilium-config` and
+  orphan-deletes `DaemonSet/cilium`, and passes when the operator puts both
+  back (the DaemonSet recreated and Ready everywhere) within 150 s; a drift
+  that does not heal is put back by the test from its snapshot. Declared in
+  the new `test/requires.toml` (`budget_secs = 600`, `kube_system_writes`);
+  the runner side is stormcentral#501, until which its writes are refused
+  and it reports could-not-run.
+- **feat:** `test/requires.toml` declares the suites' `cluster_read`
+  (networks; nodes for medium/long), now that stormcentral grants it (#55).
+
 ### 2026-10-06
 - **docs:** #19 narrowed to an owner decision between a disruptive kube-system test class and unit-only coverage (stormcos_qa#14 rules out qa-runner); labelled `needs-owner`.
 - **build:** `[profile.release]` completed (#7): `opt-level = 3`,
