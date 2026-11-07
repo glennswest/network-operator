@@ -186,11 +186,30 @@ impl Api {
         format!("?labelSelector={}", enc(&s))
     }
 
-    /// This Job's pod, by `HOSTNAME`.
-    pub async fn me(&self, hostname: &str) -> Result<Me, String> {
-        let pod = self.get(&format!("{}/{hostname}", self.pods())).await?.ok_or_else(|| format!("no pod {hostname:?} in {}", self.ns))?;
+    /// This Job's pod: by `HOSTNAME` (upstream's kubelet sets it to the pod
+    /// name), else the pod in the run's namespace whose `podIP` is
+    /// `local_ip`, the address this container reaches the apiserver from.
+    /// rustkube-node sets `HOSTNAME` to the container's name
+    /// (rustkube-node#320), and the runner's Job and container are both
+    /// `test`, so the name alone finds nothing there.
+    pub async fn me(&self, hostname: &str, local_ip: Option<&str>) -> Result<Me, String> {
+        let by_name = if hostname.is_empty() { None } else { self.get(&format!("{}/{hostname}", self.pods())).await? };
+        let pod = match by_name {
+            Some(p) => p,
+            None => {
+                let items = self.list(&self.pods()).await?.unwrap_or_default();
+                pick_me(&items, local_ip).cloned().ok_or_else(|| {
+                    format!(
+                        "no pod {hostname:?} in {}, and none of its {} pod(s) has this container's address ({})",
+                        self.ns,
+                        items.len(),
+                        local_ip.unwrap_or("unknown")
+                    )
+                })?
+            }
+        };
         Ok(Me {
-            pod: hostname.to_string(),
+            pod: pod["metadata"]["name"].as_str().unwrap_or(hostname).to_string(),
             image: pod["spec"]["containers"][0]["image"].as_str().ok_or("this pod names no image")?.to_string(),
             node: pod["spec"]["nodeName"].as_str().map(str::to_string),
             ip: pod["status"]["podIP"].as_str().map(str::to_string),
@@ -303,6 +322,21 @@ pub fn enc(s: &str) -> String {
         .collect()
 }
 
+/// Among a namespace's pods, the one that is this container: not one of the
+/// suites' workloads, not terminating, and with `podIP == local_ip`. Without
+/// an address, the only candidate if there is exactly one.
+pub fn pick_me<'a>(items: &'a [Value], local_ip: Option<&str>) -> Option<&'a Value> {
+    let cands: Vec<&Value> = items
+        .iter()
+        .filter(|p| p["metadata"]["labels"][WORKLOAD_LABEL].is_null() && p["metadata"]["deletionTimestamp"].is_null())
+        .collect();
+    match local_ip {
+        Some(ip) => cands.into_iter().find(|p| p["status"]["podIP"].as_str() == Some(ip)),
+        None if cands.len() == 1 => cands.into_iter().next(),
+        None => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -318,6 +352,23 @@ mod tests {
         p["status"]["conditions"][0]["status"] = json!("True");
         p["metadata"]["deletionTimestamp"] = json!("2026-09-27T00:00:00Z");
         assert_eq!(ready_ip(&p), None, "a terminating pod is not a backend");
+    }
+
+    #[test]
+    fn this_pod_is_found_by_its_address_not_its_hostname() {
+        let pod = |name: &str, ip: &str, workload: bool| {
+            let mut p = json!({"metadata": {"name": name, "labels": {"storm.io/test-run": "r"}}, "status": {"podIP": ip}});
+            if workload {
+                p["metadata"]["labels"][WORKLOAD_LABEL] = json!("true");
+            }
+            p
+        };
+        let items = vec![pod("w-a", "10.0.0.9", true), pod("test-x7k2p", "10.0.0.5", false), pod("other", "10.0.0.6", false)];
+        assert_eq!(pick_me(&items, Some("10.0.0.5")).unwrap()["metadata"]["name"], "test-x7k2p");
+        assert!(pick_me(&items, Some("10.0.0.9")).is_none(), "a workload is never this pod");
+        assert!(pick_me(&items, Some("10.0.0.77")).is_none());
+        assert!(pick_me(&items, None).is_none(), "two candidates and no address: no guess");
+        assert_eq!(pick_me(&items[..2], None).unwrap()["metadata"]["name"], "test-x7k2p");
     }
 
     #[test]

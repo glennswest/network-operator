@@ -4,6 +4,12 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-11-07
+- **fix:** test container (#16): the first on-cluster run (3eb33d06aa,
+  pvetest2) failed every test with "no pod \"test\"". rustkube-node sets
+  `HOSTNAME` to the container's name, not the pod's (rustkube-node#320).
+  The suite now finds its own pod by its address when the name finds
+  nothing, and workloads answer with `POD_NAME` (downward API), so replicas
+  can be told apart.
 - **docs:** network-operator stays standalone (#30, owner's decision
   2026-10-09): it does not replace stormcos's static Cilium manifests
   (stormcos's networking moves to flowsdn). README "How it ships" and

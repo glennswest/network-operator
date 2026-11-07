@@ -1,5 +1,5 @@
 //! The workload and its client. `/test workload serve <port>` answers every
-//! HTTP request with its own pod name (`HOSTNAME`), so a reply says *which*
+//! HTTP request with its own pod name (`POD_NAME`, else `HOSTNAME`), so a reply says *which*
 //! backend a Service reached. [`probe`] is the other end, run from this Job's
 //! own pod — itself a pod on the network under test.
 
@@ -9,9 +9,17 @@ use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
+/// This pod's name: `POD_NAME` (the downward API, set by `objects::pod_spec`),
+/// else `HOSTNAME`, which upstream's kubelet sets to the pod name but
+/// rustkube-node sets to the container's (rustkube-node#320).
+pub fn own_name() -> String {
+    let var = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
+    var(crate::objects::POD_NAME_ENV).or_else(|| var("HOSTNAME")).unwrap_or_else(|| "unknown".into())
+}
+
 /// Serve until SIGTERM (exit 0). Exits 2 if it cannot listen.
 pub async fn serve(port: u16) -> i32 {
-    let name = std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".into());
+    let name = own_name();
     let listener = match TcpListener::bind(("0.0.0.0", port)).await {
         Ok(l) => l,
         Err(e) => {
@@ -131,6 +139,6 @@ mod tests {
         tokio::spawn(serve(port));
         let a = addr("127.0.0.1", port).unwrap();
         let (name, _) = probe_until(a, Instant::now() + Duration::from_secs(5), |_| true).await.unwrap();
-        assert_eq!(name, std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".into()));
+        assert_eq!(name, own_name());
     }
 }

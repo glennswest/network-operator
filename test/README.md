@@ -120,7 +120,8 @@ this component's to test.
 | `STORM_RUN_ID` | — (**required**) | the `storm.io/test-run` label value |
 | `STORM_SUITE` | `short` | used when no suite is given on the command line |
 | `STORM_TIMEOUT` | 120 s short, 1800 s medium, 8 h long | seconds; waits are cut to what is left of it |
-| `HOSTNAME` | — | this pod's name (set by the kubelet) |
+| `HOSTNAME` | — | this pod's name under upstream's kubelet. rustkube-node sets it to the *container's* name (rustkube-node#320), so when no pod has that name the suite finds its own pod as the one whose `podIP` is the address it reaches `STORM_API` from |
+| `POD_NAME` | — | workloads only: set from the downward API (`metadata.name`) by the suites, so each replica answers with its own name |
 
 The token and CA come from the mounted ServiceAccount
 (`/var/run/secrets/kubernetes.io/serviceaccount`). `STORM_NODE` is not read:

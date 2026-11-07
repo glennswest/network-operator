@@ -27,7 +27,8 @@ impl Ctx {
             return Err(Outcome::Infra(format!("the runner did not set {}", missing.join(", "))));
         }
         let api = Api::new(env).map_err(Outcome::Infra)?;
-        let me = api.me(&env.pod).await.map_err(|e| Outcome::Infra(format!("reading this Job's pod: {e}")))?;
+        let local = env.local_ip();
+        let me = api.me(&env.pod, local.as_deref()).await.map_err(|e| Outcome::Infra(format!("reading this Job's pod: {e}")))?;
         let found = network::find(&api).await;
         Ok(Ctx { api, me, found })
     }

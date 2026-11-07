@@ -13,7 +13,9 @@ pub struct Env {
     pub namespace: String,
     /// `STORM_API`: the apiserver.
     pub api: String,
-    /// This pod's name (`HOSTNAME`, which the kubelet sets to it).
+    /// This pod's name from `HOSTNAME`: right under upstream's kubelet, the
+    /// container's name under rustkube-node (rustkube-node#320), so
+    /// `Api::me` falls back to [`Env::local_ip`].
     pub pod: String,
     pub token: Option<String>,
     pub ca: Option<Vec<u8>>,
@@ -43,6 +45,18 @@ impl Env {
             started: Instant::now(),
             suite,
         }
+    }
+
+    /// The address this container reaches the apiserver from: its pod IP on
+    /// the pod network. A connected UDP socket sends nothing; it only makes
+    /// the kernel pick the route and source address.
+    pub fn local_ip(&self) -> Option<String> {
+        use std::net::ToSocketAddrs;
+        let addr = api_target(&self.api)?.to_socket_addrs().ok()?.next()?;
+        let bind = if addr.is_ipv6() { "[::]:0" } else { "0.0.0.0:0" };
+        let sock = std::net::UdpSocket::bind(bind).ok()?;
+        sock.connect(addr).ok()?;
+        Some(sock.local_addr().ok()?.ip().to_string())
     }
 
     /// What the runner must have set and did not.
@@ -86,6 +100,17 @@ impl Env {
     }
 }
 
+/// `STORM_API`'s `host:port`, with https's 443 when it names no port.
+fn api_target(api: &str) -> Option<String> {
+    let rest = api.split_once("://").map_or(api, |(_, r)| r);
+    let hp = rest.split('/').next().filter(|h| !h.is_empty())?;
+    let has_port = match hp.strip_prefix('[') {
+        Some(v6) => v6.contains("]:"),
+        None => hp.contains(':'),
+    };
+    Some(if has_port { hp.to_string() } else { format!("{hp}:443") })
+}
+
 #[cfg(test)]
 pub fn fake(run_id: &str) -> Env {
     Env {
@@ -111,6 +136,21 @@ mod tests {
         assert_eq!(fake("--").slug(), "run");
         let long = fake(&"x".repeat(90));
         assert!(long.name(&"y".repeat(80)).len() <= 63);
+    }
+
+    #[test]
+    fn the_api_target_has_a_port() {
+        assert_eq!(api_target("https://10.96.0.1:6443").as_deref(), Some("10.96.0.1:6443"));
+        assert_eq!(api_target("https://kubernetes.default.svc/").as_deref(), Some("kubernetes.default.svc:443"));
+        assert_eq!(api_target("https://[fd00::1]:6443/x").as_deref(), Some("[fd00::1]:6443"));
+        assert_eq!(api_target("https://[fd00::1]").as_deref(), Some("[fd00::1]:443"));
+        assert_eq!(api_target(""), None);
+    }
+
+    #[test]
+    fn this_containers_address_is_the_route_to_the_api() {
+        // 127.0.0.1:6443 routes over loopback, whatever listens there.
+        assert_eq!(fake("r").local_ip().as_deref(), Some("127.0.0.1"));
     }
 
     #[test]

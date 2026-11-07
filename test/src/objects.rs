@@ -20,6 +20,9 @@ fn labels(run: &str, app: &str) -> Value {
 
 /// The pod spec every workload uses: this image serving its own name on
 /// [`POD_PORT`], Ready once it answers. `node` pins it (the cross-node test).
+/// The env var a workload reads its own pod name from (downward API).
+pub const POD_NAME_ENV: &str = "POD_NAME";
+
 pub fn pod_spec(image: &str, node: Option<&str>, restart: &str) -> Value {
     let mut spec = json!({
         "restartPolicy": restart,
@@ -31,6 +34,10 @@ pub fn pod_spec(image: &str, node: Option<&str>, restart: &str) -> Value {
             "imagePullPolicy": "IfNotPresent",
             "command": ["/test"],
             "args": ["workload", "serve", POD_PORT.to_string()],
+            // The reply names the pod. HOSTNAME is not enough: rustkube-node
+            // sets it to the container's name (rustkube-node#320), the same
+            // for every replica.
+            "env": [{"name": POD_NAME_ENV, "valueFrom": {"fieldRef": {"fieldPath": "metadata.name"}}}],
             "ports": [{"containerPort": POD_PORT, "protocol": "TCP"}],
             "readinessProbe": {"tcpSocket": {"port": POD_PORT}, "periodSeconds": 2},
             "resources": {"requests": {"cpu": "5m", "memory": "8Mi"}, "limits": {"memory": "32Mi"}},
@@ -116,6 +123,13 @@ pub fn allow_from(ns: &str, run: &str, name: &str, app: &str, from: (&str, &str)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn workloads_learn_their_pod_name_from_the_downward_api() {
+        let s = pod_spec("img@sha256:0", None, "Never");
+        assert_eq!(s["containers"][0]["env"][0]["name"], POD_NAME_ENV);
+        assert_eq!(s["containers"][0]["env"][0]["valueFrom"]["fieldRef"]["fieldPath"], "metadata.name");
+    }
 
     #[test]
     fn workloads_run_this_image_serving_on_the_pod_port() {
