@@ -442,6 +442,17 @@ stormcentral test run network-operator short --url http://stormcentral.g8.lo
   > `kube-system` — so the two would overwrite each other on every
   > reconcile.
 
+  **network-operator stays standalone** (owner's decision on
+  [#30](https://github.com/glennswest/network-operator/issues/30),
+  2026-10-09): it is the CNI operator for rustkube clusters *other than*
+  stormcos images, and stormcos will not hand its Cilium to it. stormcos's
+  networking is moving to flowsdn, which ships nothing named Cilium, so
+  there is no stormcos Cilium for this operator to take over. The warning
+  above is permanent, not a gap waiting on integration, and stormcos#13
+  ("integrate network-operator into the edition") has nothing left to do.
+  Parity with stormcos-cilium (#9, #28) is kept as a reference render, not
+  as a prerequisite for shipping on stormcos.
+
   Pins, for when the two are compared (#9):
 
   | | Cilium | Envoy |
@@ -464,9 +475,10 @@ stormcentral test run network-operator short --url http://stormcentral.g8.lo
   manifests stormcos ships (v1.20.2 today). `src/pins.rs` copies its
   digests, and `tests/fixtures/stormcos/` its rendered manifests; both are
   refreshed by hand when it moves its pin.
-- **stormcos** — does **not** use network-operator: it ships Cilium as
-  static manifests rendered by stormcos-cilium (see
-  [How it ships](#how-it-ships)); the two must not run on the same cluster.
+- **stormcos** — does **not** use network-operator, and will not (#30,
+  standalone): it ships Cilium as static manifests rendered by
+  stormcos-cilium (see [How it ships](#how-it-ships)), moving to flowsdn;
+  the two must not run on the same cluster.
 - **stormcentral** — runs the `test/` suites on its test machines, and is
   where a golden would be built if #18 decides for one.
 - **stormlb** — a separate concern: it owns inbound, network-operator

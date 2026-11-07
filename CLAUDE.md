@@ -146,6 +146,11 @@ until `deploy/crds/` matches).
       strip = "debuginfo" (symbols kept for readable reconcile-loop panics,
       fastetcd's choice). sc-build at 86b327b: build/test/clippy pass;
       release binary 11.1 MiB (was 14.3), 0 .debug_* sections, .symtab kept.
+- [x] #30 (2026-11-07) decided by the owner (2026-10-09): option 2,
+      standalone — the operator does not replace stormcos's static Cilium
+      manifests (stormcos moves to flowsdn). README/deck/CHANGELOG record
+      it; decision posted on stormcos#13 for that session to close. #26/#28
+      are no longer stormcos prerequisites.
 - [ ] #19 (2026-10-10) owner approved option 1 (2026-10-09): an opt-in
       disruptive suite. Plan: `test/src/drift.rs`, suite `drift-heal`
       (declared in a new `test/requires.toml` with `budget_secs` and
@@ -174,7 +179,8 @@ until `deploy/crds/` matches).
   decision #19, which picks where drift-heal runs) — P3. #9 also carries the envoy tag mismatch
   (1.36.9 here, a tag; stormcos-cilium runs Envoy in the agent, so pins
   none — #20).
-  stormcos does NOT ship or preload this operator (#21): its
+  stormcos does NOT ship or preload this operator (#21), and will not: #30
+  decided standalone (stormcos moves to flowsdn). Its
   `editions/kubernetes.toml` is the pre-pivot plan, not the image; the image
   runs Cilium from static manifests with the same kube-system object names
   we render, so the two must never run on one cluster.

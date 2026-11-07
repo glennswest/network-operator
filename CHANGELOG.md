@@ -3,6 +3,13 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-07
+- **docs:** network-operator stays standalone (#30, owner's decision
+  2026-10-09): it does not replace stormcos's static Cilium manifests
+  (stormcos's networking moves to flowsdn). README "How it ships" and
+  "Relationship", and the deck, say so; the "do not deploy on a stormcos
+  node" warning is permanent.
+
 ### 2026-10-10
 - **feat:** test container: `drift-heal`, an opt-in disruptive suite (#19,
   owner's option 1). It flips `debug` in `kube-system/cilium-config` and
