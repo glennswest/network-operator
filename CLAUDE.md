@@ -173,7 +173,10 @@ until `deploy/crds/` matches).
       pipe mid-blob), fixed in stormblock-registry v0.24.1 (#56 there). Next: `stormcentral test run
       network-operator short` on C2NR0Q2, fix what it finds, then medium.
       2026-11-07: short queued at 10723b4 on C2NR0Q2 (1bc645da06), pvetest2
-      (3eb33d06aa), server8 (72c105db74); in progress.
+      (3eb33d06aa), server8 (72c105db74); C2NR0Q2 skipped (#791, pve first).
+      Owner decision posted (needs-owner): since #30 no test machine may run
+      the operator, so suites can only skip — close on plumbing (rec.), a
+      non-stormcos rustkube target, or a one-off cluster.
       Expect exit 2 on the Network/nodes checks until stormcentral#55
       (cluster-scoped read for test runs).
 - Open: #8 (drift-heal test + must-gather; collector filed as
