@@ -149,7 +149,7 @@ until `deploy/crds/` matches).
 - [x] #30 (2026-11-07) decided by the owner (2026-10-09): option 2,
       standalone — the operator does not replace stormcos's static Cilium
       manifests (stormcos moves to flowsdn). README/deck/CHANGELOG record
-      it; decision posted on stormcos#13 for that session to close. #26/#28
+      it; stormcos#13 (now moot) is for stormcos to close. #26/#28
       are no longer stormcos prerequisites.
 - [ ] #19 (2026-10-10) owner approved option 1 (2026-10-09): an opt-in
       disruptive suite. Plan: `test/src/drift.rs`, suite `drift-heal`
