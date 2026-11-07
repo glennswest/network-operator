@@ -203,6 +203,7 @@ until `deploy/crds/` matches).
   `editions/kubernetes.toml` is the pre-pivot plan, not the image; the image
   runs Cilium from static manifests with the same kube-system object names
   we render, so the two must never run on one cluster.
+- Docs pass 2026-11-07 (since 2026-10-16): the only code change was the `test/` pod-discovery fix (b6bab5d); `src/` is unchanged, so README/deck were already right bar #30, which is recorded. Open doc-vs-code gaps are issues: #31 (stormlb VIP API), #28/#29 (parity), #34 (rustls/tokio bump).
 - Where the last session stopped (2026-09-27): issue validation pass done
   (all open issues still real, priorities confirmed); comment mining filed
   stormcos_qa#22 and added the envoy pin to #9; docs re-verified against the

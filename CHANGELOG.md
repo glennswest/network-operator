@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-11-07
+- **docs:** documentation refreshed from the code for 2026-10-16..11-07: `src/` did not change in the window; the changes (test pod discovery, `POD_NAME`, drift-heal, `requires.toml`, standalone decision #30) were verified present in README, `test/README.md`, the deck and CLAUDE.md; open doc gaps point to issues #31, #28, #29, #34.
 - **fix:** test container (#16): the first on-cluster run (3eb33d06aa,
   pvetest2) failed every test with "no pod \"test\"". rustkube-node sets
   `HOSTNAME` to the container's name, not the pod's (rustkube-node#320).
