@@ -151,17 +151,17 @@ until `deploy/crds/` matches).
       manifests (stormcos moves to flowsdn). README/deck/CHANGELOG record
       it; stormcos#13 (now moot) is for stormcos to close. #26/#28
       are no longer stormcos prerequisites.
-- [ ] #19 (2026-10-10) owner approved option 1 (2026-10-09): an opt-in
+- [x] #19 (2026-10-10) owner approved option 1 (2026-10-09): an opt-in
       disruptive suite. Plan: `test/src/drift.rs`, suite `drift-heal`
       (declared in a new `test/requires.toml` with `budget_secs` and
       `kube_system_writes = ["ConfigMap/cilium-config", "DaemonSet/cilium"]`):
       flip `debug` in cilium-config and wait for it back; orphan-delete
       DaemonSet/cilium and wait for a new one, Ready; restore from the
       snapshot if not healed. Runner side is stormcentral#501 (propose after).
-      2026-11-07: suite built (307f3c3, 1275503). Re-verifying under sc-build
-      at b6bab5d, then close #19 (the decision is made and implemented). The
-      live run waits on stormcentral#501 and on #16's decision (no test
-      machine runs the operator, #30), so it is tracked on #16.
+      Closed 2026-11-07: suite built (307f3c3, 1275503); sc-build rc=0 at
+      b62362b (root 131+5+3, test/ 33, clippy clean). Live run waits on
+      stormcentral#501 and on #16's decision (no test machine runs the
+      operator, #30); tracked on #16.
 - [ ] #32 (2026-11-07) VLAN CR -> NADs, namespace default, node bridge
       entries. Waiting on the owner (needs-owner): (1) runs here as a
       VLAN-only controller on stormcos (narrows #30) vs a separate component
@@ -190,7 +190,7 @@ until `deploy/crds/` matches).
       First live result (3eb33d06aa, pvetest2): all 5 failed with "no pod
       \"test\"": rustkube-node sets HOSTNAME to the container name
       (rustkube-node#320, evidence added). Fixed in b6bab5d (find own pod by
-      podIP; workloads get POD_NAME). Re-run short after sc-build passes.
+      podIP; workloads get POD_NAME). sc-build passed at b62362b; short re-queued there.
       Expect exit 2 on the Network/nodes checks until stormcentral#55
       (cluster-scoped read for test runs).
 - Open: #8 (drift-heal test + must-gather; collector filed as
