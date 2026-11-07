@@ -158,6 +158,12 @@ until `deploy/crds/` matches).
       flip `debug` in cilium-config and wait for it back; orphan-delete
       DaemonSet/cilium and wait for a new one, Ready; restore from the
       snapshot if not healed. Runner side is stormcentral#501 (propose after).
+- [ ] #32 (2026-11-07) VLAN CR -> NADs, namespace default, node bridge
+      entries. Waiting on the owner (needs-owner): (1) runs here as a
+      VLAN-only controller on stormcos (narrows #30) vs a separate component
+      vs held for stormcos#245; (2) node bridge via our own agent DaemonSet
+      vs stormpump vs node manifest (stormcos#28). Recommended 1(a)+2(a).
+      Live check also needs stormcos#495 (bridge/static/dhcp in cni-bin).
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
