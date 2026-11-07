@@ -60,9 +60,8 @@ The stack's analog of OpenShift's **CNO**. *Not* `cilium-operator` — it
   nothing preloads it; the old `editions/kubernetes.toml` entry is the
   pre-pivot plan. stormcos ships the same Cilium objects (`DaemonSet/cilium`,
   `cilium-operator`, `cilium-config`) as static manifests — so deploying the
-  operator on a stormcos node would fight them. Do not.
-- **Standalone by decision** (#30): for rustkube clusters other than
-  stormcos images; stormcos's networking moves to flowsdn.
+  operator on a stormcos node would fight them. Do not: it is standalone
+  by decision (#30), for other rustkube clusters.
 - Not **stormlb**: that owns inbound (shipped as its L7 router only; its
   apiserver-VIP half is not yet run on any node); this manages pod networking.
 
