@@ -60,7 +60,10 @@ install -Dpm0755 target/release/network-operator "$PKG/usr/bin/network-operator"
 install -Dpm0755 target/release/crdgen "$PKG/usr/bin/network-operator-crdgen"
 install -Dpm0644 deploy/crds/network.storm.io_networks.yaml \
     "$PKG/usr/share/network-operator/deploy/crds/network.storm.io_networks.yaml"
+install -Dpm0644 deploy/crds/network.storm.io_vlans.yaml \
+    "$PKG/usr/share/network-operator/deploy/crds/network.storm.io_vlans.yaml"
 install -Dpm0644 deploy/operator.yaml "$PKG/usr/share/network-operator/deploy/operator.yaml"
+install -Dpm0644 deploy/vlan.yaml "$PKG/usr/share/network-operator/deploy/vlan.yaml"
 for f in examples/*.yaml; do
     install -Dpm0644 "$f" "$PKG/usr/share/network-operator/$f"
 done
@@ -130,10 +133,12 @@ test -s "$DIST/network-operator-$VERSION-oci.tar.gz" \
 # The shipped manifest must name the image the shipped archive actually
 # contains, or a deploy silently looks for a tag that was never loaded.
 MANIFEST_IMAGE="localhost/network-operator:$VERSION"
-grep -q "image: $MANIFEST_IMAGE\b" deploy/operator.yaml || {
-    echo "error: deploy/operator.yaml does not reference $MANIFEST_IMAGE" >&2
-    exit 1
-}
+for m in deploy/operator.yaml deploy/vlan.yaml; do
+    grep -q "image: $MANIFEST_IMAGE\b" "$m" || {
+        echo "error: $m does not reference $MANIFEST_IMAGE" >&2
+        exit 1
+    }
+done
 
 echo
 echo "==> artifacts"

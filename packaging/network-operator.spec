@@ -31,13 +31,17 @@ cargo build --release --bin network-operator --bin crdgen
 
 %install
 install -Dpm0755 target/release/network-operator %{buildroot}%{_bindir}/network-operator
-# crdgen is too generic a name for $PATH; it only ever emits this CRD.
+# crdgen is too generic a name for $PATH; it only ever emits this operator's CRDs.
 install -Dpm0755 target/release/crdgen %{buildroot}%{_bindir}/network-operator-crdgen
 
 install -Dpm0644 deploy/crds/network.storm.io_networks.yaml \
     %{buildroot}%{_datadir}/%{name}/deploy/crds/network.storm.io_networks.yaml
+install -Dpm0644 deploy/crds/network.storm.io_vlans.yaml \
+    %{buildroot}%{_datadir}/%{name}/deploy/crds/network.storm.io_vlans.yaml
 install -Dpm0644 deploy/operator.yaml \
     %{buildroot}%{_datadir}/%{name}/deploy/operator.yaml
+install -Dpm0644 deploy/vlan.yaml \
+    %{buildroot}%{_datadir}/%{name}/deploy/vlan.yaml
 for f in examples/*.yaml; do
     install -Dpm0644 "$f" %{buildroot}%{_datadir}/%{name}/"$f"
 done
