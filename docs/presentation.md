@@ -180,20 +180,14 @@ only), 4244 Hubble, 9965 Hubble metrics; cilium-operator 9234 (loopback),
 
 ## The VLAN layer — `VLAN` CR (#32, `src/vlan/`)
 
-Pods and VMs pick a VLAN the Multus way (`k8s.v1.cni.cncf.io/networks`), or get
-their namespace's default. One VLAN-aware bridge per uplink: adding a VLAN is a
-NAD per namespace plus one bridge entry per uplink, not new interfaces.
+Pods pick a VLAN in `k8s.v1.cni.cncf.io/networks`, or get their namespace's
+default. One VLAN-aware bridge per uplink: a VLAN is NADs plus bridge entries.
 
-- **Controller** (`run --controllers vlan`): one NAD per allowed namespace
-  (bridge plugin, `vlan: <id>`, `preserveDefaultVlan: false`), the namespace
-  default annotation, reaping, and `VLAN.status` (NADs, nodes, pods).
-  The Cilium controller never starts, so this alone may run on stormcos.
-- **Node agent** (DaemonSet, raw rtnetlink): `vlan_filtering` on, each VLAN
-  tagged on the bridge's NICs/bonds; removes only its own entries; never
-  VLAN 1, never a link.
-- **Addresses**: none, static (the pod's `ips`), dhcp. Operator-assigned
-  pools wait on a webhook (#24).
-- **Live check**: the `vlan` test suite (100 VLANs, isolation, default, delete).
+- **Controller** (`run --controllers vlan`, safe on stormcos): a NAD per
+  allowed namespace (bridge plugin, `vlan: <id>`), namespace default, status.
+- **Node agent** (DaemonSet, rtnetlink): each VLAN tagged on the uplinks;
+  removes only its own entries, never VLAN 1, never a link.
+- **Addresses**: none, static, dhcp. Live check: the `vlan` test suite.
 
 ---
 
