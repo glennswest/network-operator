@@ -19,6 +19,7 @@ server that answers with its own pod name), so nothing else is pulled.
 | `medium` | < 30 min | everything in short, then `network-config`, `service-scale`, `backend-loss`, `network-policy`, `cross-node`, `load-balancer`, `endpoints-reaped`, `cleanup-all` |
 | `long` | the night window (8 h unless `STORM_TIMEOUT`) | `network-status`, `capacity`, `wave-1` … `wave-N`, `trend`, `vm-waves` (skip), `network-status-end`, `cleanup` |
 | `drift-heal` | 600 s (declared) | **disruptive**, on request only: `network-status`, `configmap-drift`, `daemonset-delete`, `network-status-end` |
+| `vlan` | 900 s (declared) | **disruptive**, on request only (#32): `vlan-layer`, `hundred-vlans`, `isolation`, `namespace-default`, `delete`, `cleanup` |
 
 - **network-status**: the `Network` (named `cluster`, else the only one)
   has `Available=True`, `Degraded` not `True`, and `observedGeneration`
@@ -90,6 +91,38 @@ A drift that is not healed is put back by the test itself before it fails
 snapshot). Until the runner grants `kube_system_writes`, the writes answer
 403 and the tests report `could not run` (exit 2), never a pass.
 
+### vlan: the VLAN layer (#32)
+
+The owner's done-when for #32, on a live node: 100 VLAN resources exist on
+one node; pods on two VLANs reach their own VLAN's peers and not each
+other's; a namespace default works; deleting a VLAN removes its NADs and
+bridge entries. It needs `deploy/vlan.yaml` on the machine (the VLAN
+controller and its node agent), a Multus-capable kubelet and the CNI
+`bridge`/`static` plugins (stormcos#495). It creates cluster-scoped VLAN CRs
+and, through the agent, VLAN entries on the node's bridge, so it is declared
+in `test/requires.toml` like drift-heal: serially, on request.
+
+- **vlan-layer**: `vlans.network.storm.io` is served and this Job's node has
+  an agent report (`network.storm.io/vlan-agent`). Otherwise every test is
+  `could not run` (exit 2).
+- **hundred-vlans**: creates 100 VLANs (IDs 3900–3999, allowed in the run's
+  namespace; the first two with `static` addresses). Pass when each one's
+  status lists its NAD in the namespace and this node among the nodes whose
+  uplinks carry it (the agent reads that back from the kernel).
+- **isolation**: three workload pods on this node, `a1` and `a2` on VLAN
+  3900 and `b1` on 3901, all in one subnet (`10.250.0.1-3/24`), so only the
+  VLAN keeps them apart. Each workload probes from inside its pod
+  (`GET /connect/<ip>:<port>`, `src/workload.rs`): `a1` must reach `a2`,
+  and `a1`->`b1`, `b1`->`a1` must not connect.
+- **namespace-default**: a VLAN (3899) with `defaultFor: [<run namespace>]`;
+  the operator must annotate the namespace, and a pod naming no networks
+  must come up attached to it (its `network-status`). The kubelet half is
+  rustkube-node#346.
+- **delete**: the pods go, then every VLAN of the run. Pass when their NADs
+  are gone and the node's agent no longer reports any of the IDs present or
+  owned.
+- **cleanup**: workloads and any VLAN of the run left by a failed step.
+
 If network-operator is **not deployed** (no `networks.network.storm.io`
 served), every test after `network-status` is a skip: the CNI there is not
 this component's to test.
@@ -109,7 +142,12 @@ this component's to test.
   waves then use a fixed 20 pods.
 - **kube-system writes** (`drift-heal` only): get/update/delete on
   `ConfigMap/cilium-config` and `DaemonSet/cilium`, by name.
-- No privileges, no host access, no fixed node, device or core count.
+- **Cluster-scoped VLAN writes** (`vlan` only): create/delete on
+  `vlans.network.storm.io`, plus reads of `nodes` and the run's own
+  `namespace` (`cluster_write`/`cluster_read`), and NAD reads in the run's
+  namespace.
+- No privileges, no host access, no fixed node, device or core count (the
+  `vlan` suite changes the node's bridge only through the operator's agent).
 
 ### Environment (`src/env.rs`)
 

@@ -2,6 +2,10 @@
 //! HTTP request with its own pod name (`POD_NAME`, else `HOSTNAME`), so a reply says *which*
 //! backend a Service reached. [`probe`] is the other end, run from this Job's
 //! own pod — itself a pod on the network under test.
+//!
+//! `GET /connect/<ip>:<port>` makes the workload itself probe another
+//! workload and answer `reached <name>` or `unreachable <why>`: how the `vlan`
+//! suite tests from *inside* a pod on a VLAN, where this Job's pod is not.
 
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
@@ -43,7 +47,7 @@ pub async fn serve(port: u16) -> i32 {
             _ = term.recv() => return 0,
         };
         let Ok((mut s, _)) = accepted else { continue };
-        let body = format!("{name}\n");
+        let name = name.clone();
         tokio::spawn(async move {
             // Read the request head (bounded); a bare TCP check sends none.
             let mut buf = [0u8; 4096];
@@ -54,6 +58,10 @@ pub async fn serve(port: u16) -> i32 {
                     _ => return,
                 }
             }
+            let body = match connect_target(&seen) {
+                Some(target) => connect_from_here(&target).await,
+                None => format!("{name}\n"),
+            };
             let resp = format!("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
             let _ = s.write_all(resp.as_bytes()).await;
             let _ = s.shutdown().await;
@@ -61,13 +69,37 @@ pub async fn serve(port: u16) -> i32 {
     }
 }
 
-/// One HTTP GET to `addr`: the name the workload answered with, and how long
-/// the round trip took (connect included).
+/// The `<ip>:<port>` of a `GET /connect/<ip>:<port>` request head.
+pub fn connect_target(head: &[u8]) -> Option<String> {
+    let text = String::from_utf8_lossy(head);
+    let path = text.lines().next()?.split_whitespace().nth(1)?;
+    path.strip_prefix("/connect/").filter(|t| !t.is_empty()).map(str::to_string)
+}
+
+/// Probe `target` from this pod: `reached <name>` or `unreachable <why>`.
+async fn connect_from_here(target: &str) -> String {
+    let addr = match target.parse::<SocketAddr>() {
+        Ok(a) => a,
+        Err(_) => return format!("unreachable {target:?} is not ip:port\n"),
+    };
+    match probe(addr, Duration::from_secs(3)).await {
+        Ok((n, _)) => format!("reached {n}\n"),
+        Err(e) => format!("unreachable {e}\n"),
+    }
+}
+
+/// One HTTP GET of `/` to `addr`: the name the workload answered with, and
+/// how long the round trip took (connect included).
 pub async fn probe(addr: SocketAddr, timeout: Duration) -> Result<(String, Duration), String> {
+    get(addr, "/", timeout).await
+}
+
+/// One HTTP GET of `path` to `addr`: the reply's body, and the round trip.
+pub async fn get(addr: SocketAddr, path: &str, timeout: Duration) -> Result<(String, Duration), String> {
     let t = Instant::now();
     let fut = async {
         let mut s = TcpStream::connect(addr).await.map_err(|e| format!("connect {addr}: {e}"))?;
-        s.write_all(format!("GET / HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n").as_bytes())
+        s.write_all(format!("GET {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n").as_bytes())
             .await
             .map_err(|e| format!("write {addr}: {e}"))?;
         let mut out = Vec::new();
@@ -130,6 +162,27 @@ mod tests {
         assert_eq!(addr("10.244.0.7", 8080).unwrap().to_string(), "10.244.0.7:8080");
         assert_eq!(addr("fd00::7", 80).unwrap().to_string(), "[fd00::7]:80");
         assert!(addr("pod-a", 80).is_err());
+    }
+
+    #[test]
+    fn connect_requests_name_their_target() {
+        assert_eq!(connect_target(b"GET /connect/10.250.0.2:8080 HTTP/1.1\r\n\r\n").as_deref(), Some("10.250.0.2:8080"));
+        assert_eq!(connect_target(b"GET / HTTP/1.1\r\n\r\n"), None);
+        assert_eq!(connect_target(b"GET /connect/ HTTP/1.1\r\n\r\n"), None);
+        assert_eq!(connect_target(b""), None);
+    }
+
+    #[tokio::test]
+    async fn a_workload_probes_another_on_request() {
+        let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        tokio::spawn(serve(port));
+        let a = addr("127.0.0.1", port).unwrap();
+        probe_until(a, Instant::now() + Duration::from_secs(5), |_| true).await.unwrap();
+        let (body, _) = get(a, &format!("/connect/127.0.0.1:{port}"), Duration::from_secs(5)).await.unwrap();
+        assert_eq!(body, format!("reached {}", own_name()));
+        // Port 1 on loopback: nothing listens.
+        let (body, _) = get(a, "/connect/127.0.0.1:1", Duration::from_secs(5)).await.unwrap();
+        assert!(body.starts_with("unreachable"), "{body}");
     }
 
     #[tokio::test]

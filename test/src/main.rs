@@ -1,6 +1,6 @@
 //! network-operator's test container (stormcentral `docs/test-standard.md`).
 //!
-//! `/test short|medium|long|drift-heal` runs a suite against the cluster the Job is in
+//! `/test short|medium|long|drift-heal|vlan` runs a suite against the cluster the Job is in
 //! and prints one JSON line per test, then a summary; exit 0 all passed, 1 a
 //! test failed, 2 a test could not run. `/test workload serve <port>` is the
 //! workload the suites start in pods — this same image.
@@ -9,7 +9,9 @@
 //! cluster-scoped calls are reads of the `Network` CR and `nodes`. The one
 //! exception is `drift-heal`, the declared disruptive suite: it writes
 //! `ConfigMap/cilium-config` and `DaemonSet/cilium` in `kube-system`
-//! (`src/drift.rs`).
+//! (`src/drift.rs`). The other is `vlan` (#32), which creates cluster-scoped
+//! VLAN CRs and so, through the node agent, VLAN entries on the node's
+//! bridge (`src/vlan.rs`).
 
 mod api;
 mod ctx;
@@ -22,6 +24,7 @@ mod objects;
 mod report;
 mod short;
 mod trend;
+mod vlan;
 mod workload;
 
 use report::{Outcome, Report};
@@ -47,8 +50,9 @@ async fn main() {
         "medium" => medium::run(&env, &mut r).await,
         "long" => long::run(&env, &mut r).await,
         "drift-heal" => drift::run(&env, &mut r).await,
+        "vlan" => vlan::run(&env, &mut r).await,
         other => {
-            r.record("suite", Outcome::Infra(format!("unknown suite {other:?}: short, medium, long or drift-heal")), 0, None);
+            r.record("suite", Outcome::Infra(format!("unknown suite {other:?}: short, medium, long, drift-heal or vlan")), 0, None);
         }
     }
     std::process::exit(r.finish());

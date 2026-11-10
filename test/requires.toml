@@ -40,3 +40,29 @@ kube_system_writes = [
   "ConfigMap/cilium-config",
   "DaemonSet/cilium",
 ]
+
+[vlan]
+# Disruptive (#32): the VLAN layer on a live node. Creates 101 cluster-scoped
+# VLAN CRs (IDs 3899-3999, labelled storm.io/test-run=<run>), so the node
+# agent turns vlan_filtering on on the node's bridge (stormbr0) and adds,
+# then removes, those VLANs on its uplinks; the operator writes
+# network.storm.io/default-networks on the run's namespace. Pods carry
+# k8s.v1.cni.cncf.io/networks (Multus NADs). Needs deploy/vlan.yaml on the
+# machine and the CNI bridge/static plugins (stormcos#495); could-not-run
+# (exit 2) without the VLAN layer. Run serially, on request, not in the
+# release gates. cluster_write is not read by the runner yet (like
+# kube_system_writes): until it is, the VLAN creates are refused and the
+# suite reports could-not-run.
+budget_secs = 900
+cluster_read = [
+  { apiGroup = "network.storm.io", resource = "vlans" },
+  { apiGroup = "", resource = "nodes" },
+  { apiGroup = "", resource = "namespaces" },
+]
+cluster_write = [
+  { apiGroup = "network.storm.io", resource = "vlans" },
+]
+namespace_read = [
+  { apiGroup = "k8s.cni.cncf.io", resource = "network-attachment-definitions" },
+]
+host_network_writes = ["bridge VLAN entries on the node's uplinks (via the VLAN node agent)"]
