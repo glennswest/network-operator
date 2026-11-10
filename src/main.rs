@@ -3,9 +3,11 @@
 //! Reconciles a `Network` CR into a Cilium install. See README.md for the
 //! design; `dry-run` prints what would be applied without touching a cluster.
 
-use clap::{Parser, Subcommand};
+use std::time::Duration;
+
+use clap::{Parser, Subcommand, ValueEnum};
 use kube::Client;
-use network_operator::{crd::Network, metrics, modes, register, render};
+use network_operator::{crd::Network, metrics, modes, register, render, vlan};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[derive(Parser)]
@@ -30,8 +32,31 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Watch the Network CR and reconcile Cilium (the default).
-    Run,
+    /// Run the controllers (the default: the Network/Cilium one).
+    Run {
+        /// Which controllers: `network` (Cilium from the Network CR) and/or
+        /// `vlan` (VLAN CRs -> NADs, #32). On stormcos run `vlan` alone: the
+        /// network controller must never run there (#30), and with it off the
+        /// Network CRD is not even registered.
+        #[arg(long, env = "CONTROLLERS", value_delimiter = ',', default_value = "network")]
+        controllers: Vec<ControllerKind>,
+    },
+    /// The VLAN node agent (a DaemonSet, #32): puts the VLANs on one bridge's
+    /// uplink ports and reports them on the node.
+    NodeAgent {
+        /// The only bridge it touches.
+        #[arg(long, env = "BRIDGE", default_value = vlan::crd::DEFAULT_BRIDGE)]
+        bridge: String,
+        /// This node's name (the downward API's `spec.nodeName`).
+        #[arg(long, env = "NODE_NAME")]
+        node_name: String,
+        /// Where sysfs's network class is.
+        #[arg(long, env = "SYS_CLASS_NET", default_value = vlan::agent::SYS_CLASS_NET)]
+        sys_class_net: std::path::PathBuf,
+        /// Pass at least this often, in seconds, besides on every VLAN change.
+        #[arg(long, env = "RESYNC_SECS", default_value_t = 30)]
+        resync_secs: u64,
+    },
     /// Render the manifests a Network YAML would produce, without a cluster.
     DryRun {
         /// Path to a Network manifest, or `-` for stdin.
@@ -46,19 +71,60 @@ async fn main() -> anyhow::Result<()> {
     init_tracing(&cli);
 
     match cli.command {
-        None | Some(Command::Run) => {
-            // Up first, so liveness answers while the CRD is registered;
-            // readiness waits for the controller.
+        None => run(cli.health_addr, &[ControllerKind::Network]).await,
+        Some(Command::Run { controllers }) => run(cli.health_addr, &controllers).await,
+        Some(Command::NodeAgent { bridge, node_name, sys_class_net, resync_secs }) => {
             let metrics = metrics::Metrics::new();
             metrics::serve(cli.health_addr, metrics.clone()).await?;
             let client = Client::try_default().await?;
-            // The operator owns its own CRD — self-register it (and update its
-            // schema on upgrade) so deploying the operator is all that's
-            // needed; the admin only supplies a Network CR.
-            register::ensure_crd(&client).await?;
-            network_operator::controller::run(client, metrics).await
+            let settings = vlan::agent::Settings {
+                bridge,
+                node: node_name,
+                sys: sys_class_net,
+                resync: Duration::from_secs(resync_secs.max(1)),
+            };
+            vlan::agent::run(client, settings, metrics).await
         }
         Some(Command::DryRun { file }) => dry_run(&file),
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+enum ControllerKind {
+    Network,
+    Vlan,
+}
+
+async fn run(health_addr: std::net::SocketAddr, controllers: &[ControllerKind]) -> anyhow::Result<()> {
+    let network = controllers.contains(&ControllerKind::Network);
+    let vlans = controllers.contains(&ControllerKind::Vlan);
+    if !network && !vlans {
+        anyhow::bail!("--controllers names none: network, vlan or both");
+    }
+    // Up first, so liveness answers while the CRDs are registered; readiness
+    // waits for the controllers.
+    let metrics = metrics::Metrics::new();
+    metrics::serve(health_addr, metrics.clone()).await?;
+    let client = Client::try_default().await?;
+    // The operator owns its own CRDs — self-register them (and update their
+    // schema on upgrade) so deploying the operator is all that's needed; the
+    // admin only supplies the CRs. Only the running controllers' CRDs.
+    if network {
+        register::ensure_crd(&client).await?;
+    }
+    if vlans {
+        register::ensure_vlan_crd(&client).await?;
+    }
+    match (network, vlans) {
+        (true, true) => {
+            tokio::try_join!(
+                network_operator::controller::run(client.clone(), metrics.clone()),
+                vlan::controller::run(client, metrics),
+            )?;
+            Ok(())
+        }
+        (true, false) => network_operator::controller::run(client, metrics).await,
+        _ => vlan::controller::run(client, metrics).await,
     }
 }
 

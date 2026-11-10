@@ -1,4 +1,5 @@
-//! Self-registration of the `Network` CRD, kept current across upgrades (#13).
+//! Self-registration of the operator's CRDs — `Network`, and `VLAN` when the
+//! VLAN controller runs (#32) — kept current across upgrades (#13).
 //!
 //! The CRD is stamped with the operator version that wrote it
 //! ([`VERSION_ANNOTATION`]). On start the operator creates it if absent, and
@@ -16,6 +17,7 @@ use kube::{Client, CustomResourceExt};
 use tracing::{info, warn};
 
 use crate::crd::Network;
+use crate::vlan::crd::Vlan;
 
 /// Which operator version last wrote the CRD.
 pub const VERSION_ANNOTATION: &str = "network.storm.io/operator-version";
@@ -26,7 +28,15 @@ pub const OPERATOR_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// The `Network` CRD as this operator registers it: the generated schema plus
 /// the version stamp. `crdgen` prints this, so `deploy/crds/` carries it too.
 pub fn crd() -> CustomResourceDefinition {
-    let mut crd = Network::crd();
+    stamp(Network::crd())
+}
+
+/// The `VLAN` CRD (#32), stamped the same way.
+pub fn vlan_crd() -> CustomResourceDefinition {
+    stamp(Vlan::crd())
+}
+
+fn stamp(mut crd: CustomResourceDefinition) -> CustomResourceDefinition {
     crd.metadata
         .annotations
         .get_or_insert_with(Default::default)
@@ -91,30 +101,39 @@ fn parse(v: &str) -> Option<(u64, u64, u64)> {
 
 /// Register the `Network` CRD, or bring it up to this operator's schema.
 pub async fn ensure_crd(client: &Client) -> Result<(), kube::Error> {
+    ensure(client, crd()).await
+}
+
+/// Register the `VLAN` CRD, or bring it up to this operator's schema.
+pub async fn ensure_vlan_crd(client: &Client) -> Result<(), kube::Error> {
+    ensure(client, vlan_crd()).await
+}
+
+async fn ensure(client: &Client, mut ours: CustomResourceDefinition) -> Result<(), kube::Error> {
     let crds: Api<CustomResourceDefinition> = Api::all(client.clone());
-    let mut ours = crd();
     let name = ours.metadata.name.clone().unwrap_or_default();
     let existing = crds.get_opt(&name).await?;
 
     match decide(existing.as_ref(), &ours) {
         Action::Create => match crds.create(&PostParams::default(), &ours).await {
-            Ok(_) => info!(version = OPERATOR_VERSION, "registered Network CRD"),
+            Ok(_) => info!(crd = %name, version = OPERATOR_VERSION, "registered CRD"),
             // Another replica (or a hand apply) won the race; the next start
             // will reconcile its schema.
-            Err(kube::Error::Api(e)) if e.code == 409 => info!("Network CRD already present"),
+            Err(kube::Error::Api(e)) if e.code == 409 => info!(crd = %name, "CRD already present"),
             Err(e) => return Err(e),
         },
         Action::Replace => {
             let existing = existing.expect("Replace is only decided for an existing CRD");
             ours.metadata.resource_version = existing.metadata.resource_version;
             crds.replace(&name, &PostParams::default(), &ours).await?;
-            info!(version = OPERATOR_VERSION, "updated Network CRD schema");
+            info!(crd = %name, version = OPERATOR_VERSION, "updated CRD schema");
         }
-        Action::Current => info!(version = OPERATOR_VERSION, "Network CRD is current"),
+        Action::Current => info!(crd = %name, version = OPERATOR_VERSION, "CRD is current"),
         Action::Newer(v) => warn!(
+            crd = %name,
             crd_version = %v,
             operator_version = OPERATOR_VERSION,
-            "Network CRD was written by a newer operator; leaving it as is"
+            "CRD was written by a newer operator; leaving it as is"
         ),
     }
     Ok(())
@@ -190,5 +209,20 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(shipped, crd(), "deploy/crds/ is stale: run `make crds`");
+        let shipped: CustomResourceDefinition = serde_yaml::from_str(include_str!(
+            "../deploy/crds/network.storm.io_vlans.yaml"
+        ))
+        .unwrap();
+        assert_eq!(shipped, vlan_crd(), "deploy/crds/ is stale: run `make crds`");
+    }
+
+    #[test]
+    fn the_vlan_crd_is_cluster_scoped_with_status() {
+        let c = vlan_crd();
+        assert_eq!(c.metadata.name.as_deref(), Some("vlans.network.storm.io"));
+        assert_eq!(c.spec.names.kind, "VLAN");
+        assert_eq!(c.spec.scope, "Cluster");
+        assert!(c.spec.versions[0].subresources.as_ref().unwrap().status.is_some());
+        assert_eq!(c.metadata.annotations.unwrap()[VERSION_ANNOTATION], OPERATOR_VERSION);
     }
 }
