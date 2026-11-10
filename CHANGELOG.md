@@ -4,6 +4,12 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-11-10
+- **fix:** test container (#16): the re-runs at 831dbc1 (da5f3a7683 pvetest1,
+  dee20f8038 pvetest2) still could not find their own pod: the container's
+  source address (10.0.1.225, 10.173.45.138) was not its pod's `podIP`. The
+  run's namespace holds only the Job's pod, so the suite now takes the sole
+  candidate when no address matches, prints both addresses as evidence, and
+  names every pod's `podIP` when it still cannot choose.
 - **feat:** the VLAN layer (#32, decided 1a + 2a): a cluster-scoped `VLAN`
   CR (`vlans.network.storm.io`, `src/vlan/`) with ID, bridge, uplink, MTU,
   allowed namespaces, `defaultFor` and an address type (`none`, `dhcp`,

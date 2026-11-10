@@ -198,14 +198,26 @@ impl Api {
             Some(p) => p,
             None => {
                 let items = self.list(&self.pods()).await?.unwrap_or_default();
-                pick_me(&items, local_ip).cloned().ok_or_else(|| {
+                let p = pick_me(&items, local_ip).cloned().ok_or_else(|| {
                     format!(
-                        "no pod {hostname:?} in {}, and none of its {} pod(s) has this container's address ({})",
+                        "no pod {hostname:?} in {}, and none of its {} pod(s) ({}) has this container's address ({})",
                         self.ns,
                         items.len(),
+                        pod_ips(&items),
                         local_ip.unwrap_or("unknown")
                     )
-                })?
+                })?;
+                if p["status"]["podIP"].as_str() != local_ip {
+                    // Evidence for the runtime: the pod's recorded address is
+                    // not the one its container sends from.
+                    eprintln!(
+                        "this Job's pod is {} (the namespace's only one); its podIP {} is not the container's source address {}",
+                        pod_ips(std::slice::from_ref(&p)),
+                        p["status"]["podIP"].as_str().unwrap_or("none"),
+                        local_ip.unwrap_or("unknown")
+                    );
+                }
+                p
             }
         };
         Ok(Me {
@@ -323,18 +335,34 @@ pub fn enc(s: &str) -> String {
 }
 
 /// Among a namespace's pods, the one that is this container: not one of the
-/// suites' workloads, not terminating, and with `podIP == local_ip`. Without
-/// an address, the only candidate if there is exactly one.
+/// suites' workloads, not terminating, and with `podIP == local_ip`. When no
+/// address matches (or there is none), the only candidate if there is exactly
+/// one: the runner's namespace holds this Job's pod alone, and on stormcos
+/// test machines the container's source address need not be its `podIP`
+/// (runs da5f3a7683, dee20f8038).
 pub fn pick_me<'a>(items: &'a [Value], local_ip: Option<&str>) -> Option<&'a Value> {
     let cands: Vec<&Value> = items
         .iter()
         .filter(|p| p["metadata"]["labels"][WORKLOAD_LABEL].is_null() && p["metadata"]["deletionTimestamp"].is_null())
         .collect();
-    match local_ip {
-        Some(ip) => cands.into_iter().find(|p| p["status"]["podIP"].as_str() == Some(ip)),
-        None if cands.len() == 1 => cands.into_iter().next(),
-        None => None,
+    if let Some(ip) = local_ip {
+        if let Some(p) = cands.iter().find(|p| p["status"]["podIP"].as_str() == Some(ip)) {
+            return Some(p);
+        }
     }
+    if cands.len() == 1 {
+        return cands.into_iter().next();
+    }
+    None
+}
+
+/// `name=podIP` of each pod, for an error that says what was there.
+pub fn pod_ips(items: &[Value]) -> String {
+    items
+        .iter()
+        .map(|p| format!("{}={}", p["metadata"]["name"].as_str().unwrap_or("?"), p["status"]["podIP"].as_str().unwrap_or("none")))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 #[cfg(test)]
@@ -366,9 +394,13 @@ mod tests {
         let items = vec![pod("w-a", "10.0.0.9", true), pod("test-x7k2p", "10.0.0.5", false), pod("other", "10.0.0.6", false)];
         assert_eq!(pick_me(&items, Some("10.0.0.5")).unwrap()["metadata"]["name"], "test-x7k2p");
         assert!(pick_me(&items, Some("10.0.0.9")).is_none(), "a workload is never this pod");
-        assert!(pick_me(&items, Some("10.0.0.77")).is_none());
+        assert!(pick_me(&items, Some("10.0.0.77")).is_none(), "two candidates, no match: no guess");
         assert!(pick_me(&items, None).is_none(), "two candidates and no address: no guess");
         assert_eq!(pick_me(&items[..2], None).unwrap()["metadata"]["name"], "test-x7k2p");
+        // The runner's namespace: this Job's pod alone, its podIP not the
+        // address the container sends from (stormcos test machines).
+        assert_eq!(pick_me(&items[..2], Some("10.173.45.138")).unwrap()["metadata"]["name"], "test-x7k2p");
+        assert_eq!(pod_ips(&items[1..2]), "test-x7k2p=10.0.0.5");
     }
 
     #[test]
