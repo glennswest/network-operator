@@ -129,6 +129,26 @@ fn shipped_examples_parse_and_resolve() {
             continue;
         }
         let text = std::fs::read_to_string(&path).unwrap();
+        // The VLAN example (#32) is a VLAN plus a pod using it: each VLAN
+        // document must parse and validate; the rest is illustration.
+        if text.contains("kind: VLAN") {
+            use serde::Deserialize;
+            let mut vlans = 0;
+            for doc in serde_yaml::Deserializer::from_str(&text) {
+                let v = serde_yaml::Value::deserialize(doc).unwrap();
+                if v["kind"].as_str() != Some("VLAN") {
+                    continue;
+                }
+                let vlan: network_operator::vlan::crd::Vlan = serde_yaml::from_value(v)
+                    .unwrap_or_else(|e| panic!("{} does not parse as a VLAN: {e}", path.display()));
+                network_operator::vlan::validate(&vlan.spec)
+                    .unwrap_or_else(|e| panic!("{} is not a valid VLAN: {e}", path.display()));
+                vlans += 1;
+            }
+            assert!(vlans > 0);
+            checked += 1;
+            continue;
+        }
         let net: Network = serde_yaml::from_str(&text)
             .unwrap_or_else(|e| panic!("{} does not parse as a Network: {e}", path.display()));
         resolve_network(&net)
