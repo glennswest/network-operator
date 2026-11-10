@@ -189,6 +189,11 @@ until `deploy/crds/` matches).
       webhook (#24) or a cluster IPAM plugin, split out. Namespace default is
       a namespace annotation the operator writes; the kubelet reading it is
       rustkube-node's (filed there). Live check also needs stormcos#495.
+      2026-11-10 CODE DONE at 081aead: sc-build rc=0 (164+5+3 root tests,
+      test/ 36, clippy both). No image yet: network-operator is not a
+      component (#27, master noted). Live `vlan` suite waits on #27,
+      stormcentral#1333 (runner grants), rustkube-node#346 (ns default),
+      #347 (isolation); dhcp on stormcos#913. Deck overflow pre-existing: #40.
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
