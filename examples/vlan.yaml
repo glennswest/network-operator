@@ -1,0 +1,26 @@
+# A VLAN offered to two namespaces, the default in one of them (#32).
+# Needs the VLAN layer: `make deploy-vlan` (deploy/vlan.yaml).
+apiVersion: network.storm.io/v1
+kind: VLAN
+metadata:
+  name: vlan10
+spec:
+  id: 10
+  namespaces: [web, db]
+  defaultFor: [web]
+  addresses:
+    type: static
+---
+# A pod on it, with its own address.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: on-vlan10
+  namespace: db
+  annotations:
+    k8s.v1.cni.cncf.io/networks: '[{"name": "vlan10", "ips": ["10.20.0.5/24"]}]'
+spec:
+  containers:
+  - name: shell
+    image: docker.io/library/busybox:1.36
+    command: ["sleep", "infinity"]

@@ -22,8 +22,14 @@ slide deck of the same material is in [`docs/presentation.md`](docs/presentation
 
 ## What it does today
 
-- **One binary, two commands:** `run` (the controller, the default) and
-  `dry-run` (render a `Network` manifest to YAML, no cluster).
+- **One binary, three commands:** `run` (the controllers, the default),
+  `node-agent` (the VLAN layer's per-node agent) and `dry-run` (render a
+  `Network` manifest to YAML, no cluster).
+- **Two independent controllers**, picked with `run --controllers`:
+  `network` (Cilium from the `Network` CR; the default) and `vlan` (`VLAN`
+  CRs -> Multus NetworkAttachmentDefinitions and node bridge VLANs, #32; see
+  [The VLAN layer](#the-vlan-layer-vlan-cr-32)). `--controllers vlan` alone
+  is the only way this operator may run on stormcos.
 - **Self-registers its CRD** on start (`Network.network.storm.io/v1`), and
   updates its schema when the operator is upgraded (`src/register.rs`).
 - **Resolves** the CR: `spec.mode` supplies defaults, any field set under
@@ -262,12 +268,100 @@ now closed, and the fallbacks stay for older apiservers:
   fields are restored on drift but fields someone else *added* survive:
   drift-heal, not drift-purge.
 
+## The VLAN layer (`VLAN` CR, #32)
+
+Up to hundreds of VLANs per cluster on the node's existing bridge, offered
+to pods (and KubeVirt VMs) the Multus way: a pod names a VLAN in
+`k8s.v1.cni.cncf.io/networks`, or gets its namespace's default. Decided on
+#32 (2026-11-10): a VLAN-only controller in this operator, and the
+operator's own node agent for the bridge.
+
+```yaml
+apiVersion: network.storm.io/v1
+kind: VLAN
+metadata:
+  name: vlan10            # also the NAD's name
+spec:
+  id: 10                  # 1-4094
+  bridge: stormbr0        # default; the node's VLAN-aware bridge
+  # uplink: bond0         # default: every bridge port that is a NIC or a bond
+  # mtu: 9000             # default: the bridge's
+  namespaces: [web, db]   # where its NAD exists; nowhere else
+  defaultFor: [web]       # namespaces whose default VLAN this is (implies allowed)
+  addresses:
+    type: static          # none (L2 only, default) | dhcp | static
+    # routes: [{dst: 10.0.0.0/8, gw: 10.20.0.1}]   # static only
+```
+
+A pod picks it:
+
+```yaml
+metadata:
+  annotations:
+    k8s.v1.cni.cncf.io/networks: '[{"name": "vlan10", "ips": ["10.20.0.5/24"]}]'
+```
+
+**How it works.** No Linux bridge per VLAN and no VLAN sub-interfaces: one
+VLAN-aware bridge (`vlan_filtering=1`) per uplink, so adding a VLAN is one
+NAD per namespace plus one bridge VLAN entry per uplink port.
+
+- **The controller** (`run --controllers vlan`, `src/vlan/controller.rs`)
+  passes over the whole set on every VLAN or namespace change and every
+  20 s. It renders one NAD per allowed namespace (labelled
+  `network.storm.io/vlan=<name>`), whose CNI config is the `bridge` plugin
+  with `"vlan": <id>` and `"preserveDefaultVlan": false`, so the pod's port
+  is untagged on the VLAN and *not* a member of VLAN 1 (the node's own LAN).
+  It writes `network.storm.io/default-networks: <vlan>` on each `defaultFor`
+  namespace, removes NADs and namespace defaults no VLAN wants any more
+  (deletion needs no finalizer), and fills `VLAN.status`.
+- **The node agent** (`network-operator node-agent`, DaemonSet,
+  `src/vlan/agent.rs`) on every node: host network, `NET_ADMIN`, raw
+  rtnetlink (`src/vlan/netlink.rs`; the image has no iproute2). For the one
+  bridge it is given (`--bridge`, default `stormbr0`) it turns
+  `vlan_filtering` on (never off) and adds each VLAN *tagged* on the uplink
+  ports. It removes only entries it added itself (listed as `owned` in its
+  report), never touches VLAN 1 (the ports' PVID), and never creates,
+  enslaves or re-addresses a link. Its report goes on its node as
+  `network.storm.io/vlan-agent` (JSON: bridge, `vlanFiltering`, `present`,
+  `owned`, per-VLAN `problems`).
+- **Conflicts**: one ID per bridge and one default per namespace; the older
+  VLAN (then the lower name) keeps it, the other is `Degraded`. A NAD of the
+  same name that is not the operator's is never overwritten.
+
+**Addresses, what ships first:** `none` (L2 only), `static` (the address the
+pod names in its `ips`; the NAD asks for the `ips` capability) and `dhcp`
+(the CNI `dhcp` plugin; its daemon must run on the node, stormcos#913). An
+**operator-assigned static pool** is not built: the address has to be in the
+pod before its sandbox exists, which needs a mutating webhook (decision #24)
+or a cluster-wide IPAM plugin.
+
+**Status** (`kubectl get vl`): `nads` (`namespace/name`), `missingNamespaces`,
+`nodes` (whose agent reports the VLAN on every uplink), `pendingNodes` (with
+why), `nodeCount`, `pods` (from each pod's `k8s.v1.cni.cncf.io/network-status`;
+at most 50 listed) and `podCount`, and conditions `Ready` (valid, NADs in
+place, every node with an agent carries it) and `Degraded` (invalid spec or
+a conflict).
+
+**What it needs from the rest of the stack:** a Multus-capable kubelet
+(rustkube-node runs NADs, #233 there) and the CNI `bridge`/`static`/`dhcp`
+plugins in the node's CNI bin directory (stormcos#495). Two kubelet pieces
+are filed on rustkube-node: a pod naming no networks gets its namespace's
+default (rustkube-node#346), and a pod may not name another namespace's NAD
+(namespace isolation, rustkube-node#347). Until #347, a pod in a namespace
+that is not allowed can still reach a VLAN by naming `allowed-ns/vlan10`.
+
+Deploy: `make deploy-vlan` (`deploy/crds/network.storm.io_vlans.yaml` and
+`deploy/vlan.yaml`: the controller Deployment, the agent DaemonSet and their
+narrow RBAC, all in `kube-system`). The live check is the `vlan` test suite
+(`test/README.md`).
+
 ## The operator process
 
 ### Command line and environment (`src/main.rs`)
 
 ```
-network-operator [--log <filter>] [--log-json] [--health-addr <addr>] [run | dry-run [FILE]]
+network-operator [--log <filter>] [--log-json] [--health-addr <addr>]
+                 [run [--controllers network,vlan] | node-agent --node-name <n> [--bridge <br>] | dry-run [FILE]]
 ```
 
 | Flag | Env | Default | |
@@ -275,7 +369,12 @@ network-operator [--log <filter>] [--log-json] [--health-addr <addr>] [run | dry
 | `--log` | `RUST_LOG` | `info` | tracing filter, e.g. `network_operator=debug` |
 | `--log-json` | `LOG_JSON` | off | JSON log lines |
 | `--health-addr` | `HEALTH_ADDR` | `0.0.0.0:9446` | the `/healthz`, `/readyz`, `/metrics` listener (`run` only) |
-| `run` | | (default command) | connect, register the CRD, run the controller |
+| `run` | | (default command) | connect, register the CRDs, run the controllers |
+| `run --controllers` | `CONTROLLERS` | `network` | `network`, `vlan` or both (comma list); only the running controllers' CRDs are registered |
+| `node-agent --node-name` | `NODE_NAME` | (required) | the VLAN node agent for this node (#32) |
+| `node-agent --bridge` | `BRIDGE` | `stormbr0` | the only bridge the agent touches |
+| `node-agent --sys-class-net` | `SYS_CLASS_NET` | `/sys/class/net` | where sysfs's links are |
+| `node-agent --resync-secs` | `RESYNC_SECS` | `30` | pass at least this often (also on every VLAN change) |
 | `dry-run [FILE]` | | `-` (stdin) | print the rendered YAML stream; nothing contacts a cluster |
 
 `run` uses the standard kube client config: the in-cluster ServiceAccount
@@ -440,7 +539,10 @@ stormcentral test run network-operator short --url http://stormcentral.g8.lo
   > the static manifests own the same objects — `DaemonSet/cilium`,
   > `Deployment/cilium-operator` and `ConfigMap/cilium-config` in
   > `kube-system` — so the two would overwrite each other on every
-  > reconcile.
+  > reconcile. The one exception is the VLAN layer alone
+  > (`deploy/vlan.yaml`, `run --controllers vlan`, #32): the Cilium
+  > controller never starts, the `Network` CRD is not registered, and
+  > nothing of Cilium's is rendered or touched.
 
   **network-operator stays standalone** (owner's decision on
   [#30](https://github.com/glennswest/network-operator/issues/30),
@@ -513,6 +615,11 @@ not do yet:
 - Pins are linux/amd64 only, and only for 1.20.2.
 - `k8sServiceHost` is still required and written into every pod, which
   stormcos deliberately does not do: decision #23.
+- VLAN layer (#32): no operator-assigned address pool (needs #24's webhook
+  or a cluster IPAM plugin); `dhcp` needs the node's CNI dhcp daemon
+  (stormcos#913); the namespace default and NAD namespace isolation are the
+  kubelet's (rustkube-node#346, #347); the `vlan` suite tests isolation on
+  one node, not across the uplink between nodes.
 
 ## Validation
 

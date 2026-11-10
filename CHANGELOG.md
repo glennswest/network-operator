@@ -3,6 +3,34 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-10
+- **feat:** the VLAN layer (#32, decided 1a + 2a): a cluster-scoped `VLAN`
+  CR (`vlans.network.storm.io`, `src/vlan/`) with ID, bridge, uplink, MTU,
+  allowed namespaces, `defaultFor` and an address type (`none`, `dhcp`,
+  `static`). `run --controllers vlan` runs only the VLAN controller (the
+  Cilium controller never starts and the `Network` CRD is not registered,
+  so it may run on stormcos, #30); it renders one Multus
+  NetworkAttachmentDefinition per allowed namespace (the `bridge` plugin
+  with `vlan` and `preserveDefaultVlan: false`), writes the namespace
+  default (`network.storm.io/default-networks`), reaps NADs and defaults no
+  VLAN wants, and reports NADs, nodes, pending nodes and pods in
+  `VLAN.status`. One ID per bridge and one default per namespace, oldest
+  wins.
+- **feat:** `node-agent`, the VLAN node agent (DaemonSet): over raw
+  rtnetlink it turns `vlan_filtering` on on its one bridge and adds each
+  VLAN tagged on the uplink ports (NICs and bonds), removing only entries it
+  added; VLAN 1 is never touched. Reports on its node
+  (`network.storm.io/vlan-agent`).
+- **feat:** `deploy/vlan.yaml` (controller, agent, narrow RBAC),
+  `deploy/crds/network.storm.io_vlans.yaml`, `make deploy-vlan`,
+  `examples/vlan.yaml`; `crdgen vlan`.
+- **feat:** test container: the `vlan` suite (100 VLANs on a node, isolation
+  between two VLANs in one subnet, namespace default, delete), declared
+  disruptive in `test/requires.toml`; workloads answer
+  `GET /connect/<ip>:<port>` by probing from inside their pod.
+- **refactor:** status writes and CRD registration are shared by both CRs
+  (`status::write_status`, `register::ensure`).
+
 ### 2026-11-07
 - **docs:** documentation refreshed from the code for 2026-10-16..11-07: `src/` did not change in the window; the changes (test pod discovery, `POD_NAME`, drift-heal, `requires.toml`, standalone decision #30) were verified present in README, `test/README.md`, the deck and CLAUDE.md; open doc gaps point to issues #31, #28, #29, #34.
 - **fix:** test container (#16): the first on-cluster run (3eb33d06aa,
