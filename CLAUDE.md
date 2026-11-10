@@ -194,6 +194,14 @@ until `deploy/crds/` matches).
       component (#27, master noted). Live `vlan` suite waits on #27,
       stormcentral#1333 (runner grants), rustkube-node#346 (ns default),
       #347 (isolation); dhcp on stormcos#913. Deck overflow pre-existing: #40.
+- [ ] #27 golden (decided #18). Shape, from stormcos's optional-operator
+      precedent (stormcos docs/OPTIONS.md; nfsop, stormblock-operator):
+      registry kind `service`, `start = false` (carried, never booted; #30),
+      binary at /usr/sbin/network-operator; `deploy/stormcos/vlan.yaml`
+      (image = golden name `network-operator`, `--controllers vlan` + the
+      agent DaemonSet) for a stormoptions catalog entry (stormcos-options).
+      Registry entry: the master runs `component add` (session token can't,
+      #829). v0.4.0 (the VLAN layer) is the version the first image carries.
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
