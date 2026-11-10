@@ -219,6 +219,14 @@ until `deploy/crds/` matches).
       podIP; workloads get POD_NAME). sc-build passed at b62362b; short re-queued there.
       Expect exit 2 on the Network/nodes checks until stormcentral#55
       (cluster-scoped read for test runs).
+      2026-11-10: master's decision (for the owner): prove the container
+      and runner on stormcos (skips expected); the operator's own proof
+      waits for a non-stormcos rustkube cluster; P3. Re-runs at 831dbc1
+      still failed (pod lookup: the Job pod has no podIP on 12.74.7-flowsdn,
+      rustkube-node#351); fixed in 3c4c2ff (sole candidate). Short at
+      3c4c2ff PASSED on pvetest1 (cc9b077f0d) and pvetest2 (b12b5e1664):
+      5 skips, exit 0: the plumbing is proven. Item moved after #27 (an
+      image is needed before the operator can run anywhere).
 - Open: #8 (drift-heal test + must-gather; collector filed as
   stormcos_qa#22; 2026-10-06 nothing left here — proposed after
   decision #19, which picks where drift-heal runs) — P3. #9 also carries the envoy tag mismatch
