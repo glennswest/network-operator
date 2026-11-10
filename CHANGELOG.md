@@ -4,6 +4,15 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-11-10
+- **feat:** `deploy/stormcos/vlan.yaml` (#27): the VLAN layer as stormcos
+  runs its optional operators, from the carried golden (`image:
+  network-operator`, `/usr/sbin/network-operator`, namespace
+  `network-operator`), for a stormoptions catalog entry. `tests/deploy.rs`
+  fails the build if anything in it would run the Cilium controller (#30),
+  if it drifts from `deploy/vlan.yaml`'s objects and RBAC, or if a
+  `localhost/` image tag is not the crate version.
+- **docs:** README "How it ships": network-operator is a stormcentral
+  component (kind `service`, `start = false`, carried and never booted).
 - **fix:** test container (#16): the re-runs at 831dbc1 (da5f3a7683 pvetest1,
   dee20f8038 pvetest2) still could not find their own pod: the container's
   source address (10.0.1.225, 10.173.45.138) was not its pod's `podIP`. The

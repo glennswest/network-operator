@@ -489,9 +489,10 @@ stormcentral test run network-operator short --url http://stormcentral.g8.lo
     | gunzip | podman load        # -> localhost/network-operator:0.3.0
   ```
 
-  v0.3.0 is tagged but has no release assets yet: the build box keeps no
-  artifacts, and how this image should be built and shipped is #18. The
-  newest published archive is v0.2.4.
+  v0.3.0 and later are tagged without release assets: build VMs keep
+  nothing, and the image ships as a stormcentral golden instead (#18
+  decided, #27; below). The newest published archive is v0.2.4. The
+  archive path stays for clusters outside stormcentral.
 
   `localhost/` is local-only to CRI-O, so nothing ever tries to pull it; the
   image must be preloaded on every node that may run the operator (nothing
@@ -518,16 +519,28 @@ stormcentral test run network-operator short --url http://stormcentral.g8.lo
 
   Applying `deploy/crds/` first is optional — the operator registers the CRD
   if absent and updates an older one on start.
-- **Golden / stormcos**: there is **no golden** for network-operator —
-  stormcentral's component registry and stormcos `deploy/build-goldens.sh`
-  do not list it. Whether it should get one is an owner decision,
-  [#18](https://github.com/glennswest/network-operator/issues/18).
-  **stormcos does not ship, preload or run network-operator.** Its image
-  (`deploy/image.toml`) has no network-operator member, and the crate that
-  used to preload container images (`stormcos-compose`) was deleted
-  (stormcos#42). stormcos `editions/kubernetes.toml` still lists
-  network-operator, but that file is the pre-pivot plan, kept only for a CI
-  lint, and says it is not what the image carries.
+- **Golden** (decided on #18, work on #27): network-operator is a
+  stormcentral component, kind `service`, **`start = false`**: a release
+  *carries* its golden (the binary at `/usr/sbin/network-operator`) and
+  nothing starts it at boot, the way stormcos carries its optional
+  operators (stormcos `docs/OPTIONS.md`; nfsop, stormblock-operator). The
+  only thing that may run from it on stormcos is the VLAN layer:
+  `deploy/stormcos/vlan.yaml` is `deploy/vlan.yaml` with `image:
+  network-operator` (the golden by name; the kubelet roots the pod on it)
+  and `command: ["/usr/sbin/network-operator"]`, in namespace
+  `network-operator`, for a stormoptions catalog entry to apply when the
+  VLAN option is enabled. `tests/deploy.rs` fails the build if any workload
+  in it would run anything but `run --controllers vlan` or `node-agent`.
+  The registry entry is the owner's setting: the master adds it
+  (`stormcentral component add`), and images are then built with
+  `stormcentral component build network-operator`.
+  **stormcos does not ship, preload or run the Cilium half of
+  network-operator.** Its image (`deploy/image.toml`) has no
+  network-operator member, and the crate that used to preload container
+  images (`stormcos-compose`) was deleted (stormcos#42). stormcos
+  `editions/kubernetes.toml` still lists network-operator, but that file is
+  the pre-pivot plan, kept only for a CI lint, and says it is not what the
+  image carries.
 
   Instead a stormcos node runs Cilium from **static manifests**
   (`deploy/manifests/10-cilium-namespace.yaml` … `70-cilium-operator.yaml`,
@@ -581,8 +594,8 @@ stormcentral test run network-operator short --url http://stormcentral.g8.lo
   standalone): it ships Cilium as static manifests rendered by
   stormcos-cilium (see [How it ships](#how-it-ships)), moving to flowsdn;
   the two must not run on the same cluster.
-- **stormcentral** — runs the `test/` suites on its test machines, and is
-  where a golden would be built if #18 decides for one.
+- **stormcentral** — runs the `test/` suites on its test machines, and
+  builds network-operator's golden (#27; carried, `start = false`).
 - **stormlb** — a separate concern: it owns inbound, network-operator
   manages in-cluster networking. What ships on a stormcos node is its
   **router only** (`[router]`, the L7 Host-header demux over HTTPRoutes on
