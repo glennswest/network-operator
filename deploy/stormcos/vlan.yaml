@@ -1,0 +1,205 @@
+# The VLAN layer on stormcos (#32, #27): deploy/vlan.yaml with the image
+# taken from network-operator's golden, the way stormcos runs its optional
+# operators (stormcos docs/OPTIONS.md): `image: network-operator` is the
+# golden's name (the kubelet roots the pod on the carried golden) and the
+# binary is /usr/sbin/network-operator. stormoptions applies this when the
+# VLAN option is enabled; nothing starts it at boot (registry start = false).
+#
+# Only the VLAN controller and its node agent. Nothing here may ever run the
+# Network/Cilium controller on stormcos (#30); tests/deploy.rs checks it.
+# Namespace `network-operator` (stormoptions creates an option's namespace).
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: network-operator-vlan
+  namespace: network-operator
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: network-operator-vlan
+rules:
+# Self-registration of the VLAN CRD (src/register.rs).
+- apiGroups: ["apiextensions.k8s.io"]
+  resources: ["customresourcedefinitions"]
+  verbs: ["get", "create", "update"]
+- apiGroups: ["network.storm.io"]
+  resources: ["vlans"]
+  verbs: ["get", "list", "watch", "update"]
+- apiGroups: ["network.storm.io"]
+  resources: ["vlans/status"]
+  verbs: ["get", "patch", "update"]
+- apiGroups: ["k8s.cni.cncf.io"]
+  resources: ["network-attachment-definitions"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# The namespace default annotation (network.storm.io/default-networks).
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list", "watch", "patch"]
+# Status: the agents' node reports and the pods attached to each VLAN.
+- apiGroups: [""]
+  resources: ["nodes", "pods"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: network-operator-vlan
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: network-operator-vlan
+subjects:
+- kind: ServiceAccount
+  name: network-operator-vlan
+  namespace: network-operator
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: network-operator-vlan-agent
+  namespace: network-operator
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: network-operator-vlan-agent
+rules:
+- apiGroups: ["network.storm.io"]
+  resources: ["vlans"]
+  verbs: ["get", "list", "watch"]
+# Its report goes on its own node (network.storm.io/vlan-agent).
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: network-operator-vlan-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: network-operator-vlan-agent
+subjects:
+- kind: ServiceAccount
+  name: network-operator-vlan-agent
+  namespace: network-operator
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: network-operator-vlan
+  namespace: network-operator
+  labels:
+    app.kubernetes.io/name: network-operator-vlan
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: network-operator-vlan
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: network-operator-vlan
+    spec:
+      serviceAccountName: network-operator-vlan
+      containers:
+      - name: controller
+        # The golden, built by stormcentral and carried by the release.
+        image: network-operator
+        command: ["/usr/sbin/network-operator"]
+        args: ["run", "--controllers", "vlan"]
+        env:
+        - name: RUST_LOG
+          value: info
+        - name: HEALTH_ADDR
+          value: 0.0.0.0:9446
+        ports:
+        - name: health
+          containerPort: 9446
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 9446
+          initialDelaySeconds: 10
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 9446
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+---
+# The node agent: host network (it programs the host's bridge over netlink),
+# NET_ADMIN and nothing else. It touches only `vlan_filtering` and the VLAN
+# entries it added on BRIDGE's uplink ports (src/vlan/agent.rs).
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: network-operator-vlan-agent
+  namespace: network-operator
+  labels:
+    app.kubernetes.io/name: network-operator-vlan-agent
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: network-operator-vlan-agent
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: network-operator-vlan-agent
+    spec:
+      serviceAccountName: network-operator-vlan-agent
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      tolerations:
+      - operator: Exists
+      containers:
+      - name: agent
+        image: network-operator
+        command: ["/usr/sbin/network-operator"]
+        args: ["node-agent"]
+        env:
+        - name: RUST_LOG
+          value: info
+        - name: BRIDGE
+          value: stormbr0
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        # A host port (host network): clear of the controller's 9446 and of
+        # every port Cilium binds.
+        - name: HEALTH_ADDR
+          value: 0.0.0.0:9447
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 9447
+          initialDelaySeconds: 10
+          periodSeconds: 20
+        resources:
+          requests:
+            cpu: 5m
+            memory: 16Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+            add: ["NET_ADMIN"]
