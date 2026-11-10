@@ -202,6 +202,11 @@ until `deploy/crds/` matches).
       agent DaemonSet) for a stormoptions catalog entry (stormcos-options).
       Registry entry: the master runs `component add` (session token can't,
       #829). v0.4.0 (the VLAN layer) is the version the first image carries.
+      2026-11-10: repo side done (0ae6eb9 deploy/stormcos/vlan.yaml +
+      tests/deploy.rs; edcceb4 docs; v0.4.0 tagged d519c7d, sc-build rc=0).
+      Waiting on the registry entry (owner's setting; command on #27, noted
+      to the master); then `component build network-operator`. Catalog
+      entry filed: stormcos-options#23.
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
