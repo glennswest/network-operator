@@ -162,12 +162,18 @@ until `deploy/crds/` matches).
       b62362b (root 131+5+3, test/ 33, clippy clean). Live run waits on
       stormcentral#501 and on #16's decision (no test machine runs the
       operator, #30); tracked on #16.
-- [ ] #32 (2026-11-07) VLAN CR -> NADs, namespace default, node bridge
-      entries. Waiting on the owner (needs-owner): (1) runs here as a
-      VLAN-only controller on stormcos (narrows #30) vs a separate component
-      vs held for stormcos#245; (2) node bridge via our own agent DaemonSet
-      vs stormpump vs node manifest (stormcos#28). Recommended 1(a)+2(a).
-      Live check also needs stormcos#495 (bridge/static/dhcp in cni-bin).
+- [ ] #32 VLAN layer. Decided 2026-11-10 (master, as recommended): 1(a) a
+      VLAN-only controller (`run --controllers vlan`, Cilium controller never
+      starts, Network CRD never registered) on stormcos; 2(a) our own node
+      agent (`node-agent`, DaemonSet) touching only `vlan_filtering` and the
+      VLAN entries it added on the uplink ports of the one bridge it is given.
+      Plan: `src/vlan/` (crd, pure render/validate/status, controller, agent,
+      netlink); `deploy/crds/network.storm.io_vlans.yaml`; `deploy/vlan.yaml`;
+      then the `vlan` test suite in `test/`. Ships first: address `none`,
+      `dhcp`, `static` (pod-supplied `ips`); an operator-assigned pool needs a
+      webhook (#24) or a cluster IPAM plugin, split out. Namespace default is
+      a namespace annotation the operator writes; the kubelet reading it is
+      rustkube-node's (filed there). Live check also needs stormcos#495.
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
