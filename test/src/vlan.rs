@@ -368,9 +368,6 @@ mod tests {
         assert_eq!(d.spec.default_for, vec!["ns1"]);
     }
 
-    #[test]
-    fn the_ids_stay_in_range_and_apart() {
-        assert!(FIRST_ID + 99 <= 4094);
-        assert!(DEFAULT_ID < FIRST_ID);
-    }
+    // The IDs stay in range and apart: checked at compile time.
+    const _: () = assert!(FIRST_ID + 99 <= 4094 && DEFAULT_ID < FIRST_ID);
 }
