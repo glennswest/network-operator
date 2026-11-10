@@ -10,7 +10,9 @@ The design and the mode table live in README.md — read it before changing
 - Test: `cargo test` (pure unit + golden tests; no cluster needed)
 - Lint: `cargo clippy --all-targets -- -D warnings`
 - Regenerate the CRD after editing `src/crd.rs`: `make crds`
-  (writes `deploy/crds/network.storm.io_networks.yaml` — never hand-edit it)
+  (writes `deploy/crds/network.storm.io_networks.yaml` and
+  `network.storm.io_vlans.yaml` — never hand-edit them; no local cargo, so
+  under sc-build print them: `cargo run -q --bin crdgen -- vlan`)
 - Accept an intended render change: `make golden`, then review the diff
 - Render without a cluster: `make dry-run FILE=examples/network-bgp.yaml`
 - On-cluster test container (`test/`, its own workspace + Cargo.lock):
@@ -21,7 +23,7 @@ The design and the mode table live in README.md — read it before changing
 
 ## Layout
 
-Docs: `README.md` (the reference), `docs/presentation.md` (Marp deck), `CHANGELOG.md`.
+Docs: `README.md` (the reference), `docs/presentation.md` (Marp deck; check the fit with `sc-build deploy/check-slides.sh`), `CHANGELOG.md`.
 
 The pipeline is `crd -> modes -> render -> apply`, and everything before
 `apply` is a pure function. That is what lets the whole install be tested off
@@ -50,8 +52,20 @@ The pipeline is `crd -> modes -> render -> apply`, and everything before
   `status.applied*`.
 - `src/controller.rs` — the reconcile loop and the object watches that make
   drift self-heal.
+- `src/vlan/` — the VLAN layer (#32), independent of the Cilium pipeline:
+  `crd.rs` (the `VLAN` CR), `mod.rs` (pure: `accept` = validation + conflict
+  rules shared by controller and agent, `plan`, `status`), `controller.rs`
+  (whole-set pass on VLAN/namespace change + 20 s), `agent.rs` (node agent:
+  pure `actions`/`owned_after`/`present`, then netlink), `netlink.rs` (raw
+  rtnetlink message build/parse + the socket). `run --controllers vlan`
+  runs it alone (the only thing allowed on stormcos); `deploy/vlan.yaml`.
 
 ## Invariants (do not weaken)
+
+- The VLAN node agent removes **only entries it added** (`owned` in its node
+  annotation), never touches VLAN 1, never turns `vlan_filtering` off, and
+  never creates/enslaves/re-addresses a link. NADs keep
+  `preserveDefaultVlan: false` (else a pod's port joins the node's LAN).
 
 - The DaemonSet/Deployment **selectors must not depend on the spec**. They are
   immutable server-side; deriving them from config makes any change unappliable.
@@ -82,7 +96,8 @@ object PUT.
 ## Version
 
 `0.3.0` (tag `v0.3.0`). Version locations, all must match: `Cargo.toml`,
-`deploy/operator.yaml` (image tag), the OCI-archive example in `README.md`.
+`deploy/operator.yaml` and `deploy/vlan.yaml` (image tags, twice in the
+latter), the OCI-archive example in `README.md`.
 `Cargo.lock` is committed (the image builds `--locked`). A version bump
 also needs `make crds` (the CRD carries the version stamp; a unit test fails
 until `deploy/crds/` matches).
