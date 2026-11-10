@@ -5,10 +5,18 @@
 //! Cluster-scoped; the object's name is also the NAD's name, so a pod names
 //! the VLAN in `k8s.v1.cni.cncf.io/networks` by it.
 
+// kube-derive names the generated type after the kind (`VLAN`); 0.98 has no
+// `struct =` override, so the acronym lint is allowed here and the rest of
+// the crate uses the `Vlan` alias.
+#![allow(clippy::upper_case_acronyms)]
+
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition;
 use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+/// The `VLAN` custom resource (the type kube-derive generates).
+pub type Vlan = VLAN;
 
 /// The bridge a VLAN uses when `spec.bridge` is unset: stormcos's node
 /// bridge, which carries the uplink.
@@ -19,7 +27,6 @@ pub const DEFAULT_BRIDGE: &str = "stormbr0";
     group = "network.storm.io",
     version = "v1",
     kind = "VLAN",
-    struct = "Vlan",
     plural = "vlans",
     shortname = "vl",
     status = "VlanStatus",
