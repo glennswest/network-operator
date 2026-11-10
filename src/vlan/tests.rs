@@ -72,9 +72,12 @@ fn address_types_render_their_ipam() {
     assert_eq!(c["capabilities"], json!({"ips": true}), "the pod's ips reach the plugin");
 }
 
+/// A change to a valid spec.
+type Edit = Box<dyn Fn(&mut VlanSpec)>;
+
 #[test]
 fn invalid_specs_are_rejected_with_a_reason() {
-    let cases: Vec<(Box<dyn Fn(&mut VlanSpec)>, &str)> = vec![
+    let cases: Vec<(Edit, &str)> = vec![
         (Box::new(|s| s.id = 0), "outside 1-4094"),
         (Box::new(|s| s.id = 4095), "outside 1-4094"),
         (Box::new(|s| s.bridge = Some("a-very-long-bridge".into())), "interface name"),

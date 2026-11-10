@@ -59,7 +59,7 @@ fn align4(n: usize) -> usize {
 }
 
 fn pad(buf: &mut Vec<u8>) {
-    while buf.len() % 4 != 0 {
+    while !buf.len().is_multiple_of(4) {
         buf.push(0);
     }
 }
