@@ -362,7 +362,7 @@ mod tests {
         let parsed: network_operator::vlan::crd::Vlan = serde_json::from_value(v.clone()).unwrap();
         assert_eq!(parsed.spec.id, 3900);
         assert_eq!(parsed.spec.namespaces, vec!["ns1"]);
-        assert_eq!(parsed.spec.addresses.unwrap().kind, network_operator::vlan::crd::AddressType::Static);
+        assert_eq!(parsed.spec.addresses.as_ref().unwrap().kind, network_operator::vlan::crd::AddressType::Static);
         assert!(network_operator::vlan::validate(&parsed.spec).is_ok());
         let d: network_operator::vlan::crd::Vlan = serde_json::from_value(vlan("r", "ns1", "d", DEFAULT_ID, false, true)).unwrap();
         assert_eq!(d.spec.default_for, vec!["ns1"]);
