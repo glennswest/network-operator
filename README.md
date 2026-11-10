@@ -15,7 +15,7 @@ Network Operator (CNO)**.
 > with the agent DaemonSet, RBAC and config, and manages their
 > **lifecycle**.
 
-Version **0.3.0**. Everything below is read from the source at that version;
+Version **0.4.0**. Everything below is read from the source at that version;
 where the code does not do something yet, this README says so. A short
 slide deck of the same material is in [`docs/presentation.md`](docs/presentation.md)
 (Marp: `npx @marp-team/marp-cli docs/presentation.md`).
@@ -485,8 +485,8 @@ stormcentral test run network-operator short --url http://stormcentral.g8.lo
   each GitHub release**, not through a registry:
 
   ```
-  curl -L https://github.com/glennswest/network-operator/releases/download/v0.3.0/network-operator-0.3.0-oci.tar.gz \
-    | gunzip | podman load        # -> localhost/network-operator:0.3.0
+  curl -L https://github.com/glennswest/network-operator/releases/download/v0.4.0/network-operator-0.4.0-oci.tar.gz \
+    | gunzip | podman load        # -> localhost/network-operator:0.4.0
   ```
 
   v0.3.0 and later are tagged without release assets: build VMs keep

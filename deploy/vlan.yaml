@@ -110,7 +110,7 @@ spec:
       priorityClassName: system-cluster-critical
       containers:
       - name: controller
-        image: localhost/network-operator:0.3.0
+        image: localhost/network-operator:0.4.0
         imagePullPolicy: IfNotPresent
         args: ["run", "--controllers", "vlan"]
         env:
@@ -172,7 +172,7 @@ spec:
       - operator: Exists
       containers:
       - name: agent
-        image: localhost/network-operator:0.3.0
+        image: localhost/network-operator:0.4.0
         imagePullPolicy: IfNotPresent
         args: ["node-agent"]
         env:

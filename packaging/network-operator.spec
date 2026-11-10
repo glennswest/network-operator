@@ -54,6 +54,11 @@ done
 %{_datadir}/%{name}/
 
 %changelog
+* Tue Nov 10 2026 Glenn West <glennswest@neuralcloudcomputing.com> - 0.4.0-1
+- The VLAN layer (#32): VLAN CR, run --controllers vlan, node-agent,
+  deploy/vlan.yaml and deploy/stormcos/vlan.yaml.
+- /healthz, /readyz, /metrics; Network CRD self-update; health rollup;
+  envoy reaping.
 * Tue Oct 06 2026 Glenn West <glennswest@neuralcloudcomputing.com> - 0.3.0-1
 - Pin every Cilium image by digest; default Cilium 1.20.2. An unpinned
   version is rejected unless spec.cilium.images names each image by digest.

@@ -3,6 +3,34 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+## [v0.4.0] — 2026-11-10
+
+### Added
+- The VLAN layer (#32): `VLAN` CR, `run --controllers vlan` (NADs per
+  allowed namespace, namespace default, status), the `node-agent`
+  DaemonSet (raw rtnetlink, tagged entries on the bridge's uplinks),
+  `deploy/vlan.yaml`, `deploy/stormcos/vlan.yaml` (#27), `crdgen vlan`.
+- `/healthz`, `/readyz`, `/metrics` on `--health-addr` (#15).
+- The `Network` CRD is created or updated on start, stamped with the
+  operator version, never over a newer one (#13).
+- Test container: the `drift-heal` (#19) and `vlan` (#32) suites,
+  `test/requires.toml`.
+
+### Fixed
+- Turning Envoy off deletes its four objects (#12).
+- Test container: finds its own pod when `HOSTNAME` is the container's
+  name, or when the pod has no `podIP` (#16).
+
+### Changed
+- `Available` also requires Envoy ready, Cilium CRDs Established and a
+  `CiliumNode` per ready agent (#14).
+- Release profile: thin LTO, one codegen unit, debuginfo stripped (#7).
+
+### Documentation
+- Standalone decision (#30), stormlb router-only (#22), the golden (#27).
+
+The dated entries below are the detail, from v0.3.0 to v0.4.0.
+
 ### 2026-11-10
 - **feat:** `deploy/stormcos/vlan.yaml` (#27): the VLAN layer as stormcos
   runs its optional operators, from the carried golden (`image:

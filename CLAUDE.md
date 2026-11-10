@@ -95,7 +95,7 @@ object PUT.
 
 ## Version
 
-`0.3.0` (tag `v0.3.0`). Version locations, all must match: `Cargo.toml`,
+`0.4.0` (tag `v0.4.0`). Version locations, all must match: `Cargo.toml`,
 `deploy/operator.yaml` and `deploy/vlan.yaml` (image tags, twice in the
 latter), the OCI-archive example in `README.md`.
 `Cargo.lock` is committed (the image builds `--locked`). A version bump
