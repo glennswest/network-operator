@@ -160,11 +160,12 @@ Progressing, Degraded.
 **CLI** (`src/main.rs`) — no config file:
 
 ```
-network-operator [--log <filter>] [--log-json] [--health-addr <addr>] [run | dry-run [FILE]]
+network-operator [--log <filter>] [--log-json] [--health-addr <addr>] <command>
   --log          RUST_LOG     default info
   --log-json     LOG_JSON     JSON lines
   --health-addr  HEALTH_ADDR  default 0.0.0.0:9446
-  run         the controller (default)
+  run [--controllers network,vlan]   the controllers (default: network)
+  node-agent --node-name <n>         the VLAN node agent (#32)
   dry-run     render a CR to YAML, no cluster  (make dry-run FILE=…)
 ```
 
@@ -174,6 +175,25 @@ agent 9879 `/healthz`, 9962 metrics, 9964 proxy metrics (embedded proxy
 only), 4244 Hubble, 9965 Hubble metrics; cilium-operator 9234 (loopback),
 9963 metrics; hubble-relay 4245; envoy 9878 health / 9964 metrics;
 8472/udp VXLAN.
+
+---
+
+## The VLAN layer — `VLAN` CR (#32, `src/vlan/`)
+
+Pods and VMs pick a VLAN the Multus way (`k8s.v1.cni.cncf.io/networks`), or get
+their namespace's default. One VLAN-aware bridge per uplink: adding a VLAN is a
+NAD per namespace plus one bridge entry per uplink, not new interfaces.
+
+- **Controller** (`run --controllers vlan`): one NAD per allowed namespace
+  (bridge plugin, `vlan: <id>`, `preserveDefaultVlan: false`), the namespace
+  default annotation, reaping, and `VLAN.status` (NADs, nodes, pods).
+  The Cilium controller never starts, so this alone may run on stormcos.
+- **Node agent** (DaemonSet, raw rtnetlink): `vlan_filtering` on, each VLAN
+  tagged on the bridge's NICs/bonds; removes only its own entries; never
+  VLAN 1, never a link.
+- **Addresses**: none, static (the pod's `ips`), dhcp. Operator-assigned
+  pools wait on a webhook (#24).
+- **Live check**: the `vlan` test suite (100 VLANs, isolation, default, delete).
 
 ---
 
