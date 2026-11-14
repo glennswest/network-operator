@@ -271,12 +271,13 @@ until `deploy/crds/` matches).
 
 ## Status
 
-Renders, applies, drift-heals and reports on Cilium for all five modes plus
-the optional standalone Envoy, and serves its own `/healthz`, `/readyz`,
-`/metrics` on :9446. Not shipped as a golden (#18); the image is an
-OCI archive on each release; nothing preloads it (stormcos does not ship
-it — it runs Cilium from static manifests, #21). Docs last refreshed from
-the code 2026-10-06 for v0.3.0 (#9: digest pins, Hubble, parity with
-stormcos's 23 Cilium objects; Cilium 1.20.2 not yet run on a cluster by this
-operator). `test/` suites built and pushed by stormcentral, never yet run
-on a cluster (stormcos#135, then stormcentral#56).
+v0.4.0. Renders, applies, drift-heals and reports on Cilium for all five
+modes plus the optional standalone Envoy; serves `/healthz`, `/readyz`,
+`/metrics` on :9446; and carries the VLAN layer (`VLAN` CR, `run
+--controllers vlan`, `node-agent`, #32). Standalone (#30): it does not
+replace stormcos's static Cilium manifests. Ships as a stormcentral golden
+carried with `start = false` (#27, waiting on the registry entry); the OCI
+archive on GitHub releases stops at v0.2.4. Docs refreshed from the code
+2026-11-14. The `test/` container's plumbing passes on pvetest1/2 (5 skips,
+#16); no operator run on a cluster yet. Open doc-vs-code gaps are issues:
+#41 (VLAN address pool), #40 (deck overflow), #31, #28, #29, #34.

@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-14
+- **docs:** README OCI-archive example pointed at v0.4.0, which has no release asset; now v0.2.4, the newest archive. VLAN pool gap cross-referenced to #41. CLAUDE.md Status rewritten for v0.4.0 (VLAN layer, golden, standalone). Refreshed against `git log --since=2026-11-07`; src/ otherwise matches README.
+
 ## [v0.4.0] — 2026-11-10
 
 ### Added

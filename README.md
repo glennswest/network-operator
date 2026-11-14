@@ -333,7 +333,7 @@ pod names in its `ips`; the NAD asks for the `ips` capability) and `dhcp`
 (the CNI `dhcp` plugin; its daemon must run on the node, stormcos#913). An
 **operator-assigned static pool** is not built: the address has to be in the
 pod before its sandbox exists, which needs a mutating webhook (decision #24)
-or a cluster-wide IPAM plugin.
+or a cluster-wide IPAM plugin (split out as #41).
 
 **Status** (`kubectl get vl`): `nads` (`namespace/name`), `missingNamespaces`,
 `nodes` (whose agent reports the VLAN on every uplink), `pendingNodes` (with
@@ -485,8 +485,8 @@ stormcentral test run network-operator short --url http://stormcentral.g8.lo
   each GitHub release**, not through a registry:
 
   ```
-  curl -L https://github.com/glennswest/network-operator/releases/download/v0.4.0/network-operator-0.4.0-oci.tar.gz \
-    | gunzip | podman load        # -> localhost/network-operator:0.4.0
+  curl -L https://github.com/glennswest/network-operator/releases/download/v0.2.4/network-operator-0.2.4-oci.tar.gz \
+    | gunzip | podman load        # -> localhost/network-operator:0.2.4
   ```
 
   v0.3.0 and later are tagged without release assets: build VMs keep
@@ -628,7 +628,7 @@ not do yet:
 - Pins are linux/amd64 only, and only for 1.20.2.
 - `k8sServiceHost` is still required and written into every pod, which
   stormcos deliberately does not do: decision #23.
-- VLAN layer (#32): no operator-assigned address pool (needs #24's webhook
+- VLAN layer (#32): no operator-assigned address pool (#41; needs #24's webhook
   or a cluster IPAM plugin); `dhcp` needs the node's CNI dhcp daemon
   (stormcos#913); the namespace default and NAD namespace isolation are the
   kubelet's (rustkube-node#346, #347); the `vlan` suite tests isolation on
