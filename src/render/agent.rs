@@ -154,6 +154,8 @@ fn agent_container(cfg: &EffectiveConfig) -> Container {
         // A standalone Envoy reaches xDS through this directory, so the agent
         // has to serve it from the same host path Envoy mounts.
         .chain(cfg.envoy.then(super::envoy::agent_socket_mount))
+        // The IPsec keyfile (`ipsec-key-file` in cilium-config, #44).
+        .chain(ipsec(cfg).then(|| mount_ro(IPSEC_VOLUME, crate::ipsec::MOUNT_PATH)))
         .collect()),
         ..Default::default()
     }
@@ -319,7 +321,17 @@ fn volumes(cfg: &EffectiveConfig) -> Vec<Volume> {
     if cfg.envoy {
         v.push(super::envoy::agent_socket_volume());
     }
+    if ipsec(cfg) {
+        v.push(secret_volume(IPSEC_VOLUME, crate::ipsec::SECRET));
+    }
     v
+}
+
+/// The agent's volume for the IPsec keyfile Secret (the chart's name).
+const IPSEC_VOLUME: &str = "cilium-ipsec-secrets";
+
+fn ipsec(cfg: &EffectiveConfig) -> bool {
+    cfg.encryption == crate::crd::EncryptionType::Ipsec
 }
 
 #[cfg(test)]
@@ -496,19 +508,45 @@ mod tests {
 
     #[test]
     fn every_mount_resolves_to_a_declared_volume() {
-        let ds = ds(&cfg_for(Mode::Overlay));
-        let pod = ds.spec.unwrap().template.spec.unwrap();
-        let declared: Vec<_> = pod.volumes.unwrap().into_iter().map(|v| v.name).collect();
-        for c in pod.containers.iter().chain(pod.init_containers.as_ref().unwrap()) {
-            for m in c.volume_mounts.iter().flatten() {
-                assert!(
-                    declared.contains(&m.name),
-                    "container {} mounts undeclared volume {}",
-                    c.name,
-                    m.name
-                );
+        let mut ipsec = cfg_for(Mode::Overlay);
+        ipsec.encryption = crate::crd::EncryptionType::Ipsec;
+        for cfg in [cfg_for(Mode::Overlay), ipsec] {
+            let ds = ds(&cfg);
+            let pod = ds.spec.unwrap().template.spec.unwrap();
+            let declared: Vec<_> = pod.volumes.unwrap().into_iter().map(|v| v.name).collect();
+            for c in pod.containers.iter().chain(pod.init_containers.as_ref().unwrap()) {
+                for m in c.volume_mounts.iter().flatten() {
+                    assert!(
+                        declared.contains(&m.name),
+                        "container {} mounts undeclared volume {}",
+                        c.name,
+                        m.name
+                    );
+                }
             }
         }
+    }
+
+    #[test]
+    fn ipsec_mounts_the_keyfile_secret_read_only() {
+        let mut cfg = cfg_for(Mode::Overlay);
+        cfg.encryption = crate::crd::EncryptionType::Ipsec;
+        let pod = ds(&cfg).spec.unwrap().template.spec.unwrap();
+        let vol = pod.volumes.unwrap().into_iter().find(|v| v.name == IPSEC_VOLUME).unwrap();
+        assert_eq!(vol.secret.unwrap().secret_name.as_deref(), Some("cilium-ipsec-keys"));
+        let m = pod.containers[0]
+            .volume_mounts
+            .iter()
+            .flatten()
+            .find(|m| m.name == IPSEC_VOLUME)
+            .cloned()
+            .unwrap();
+        assert_eq!(m.mount_path, "/etc/ipsec");
+        assert_eq!(m.read_only, Some(true));
+
+        // Without ipsec there is no Secret to wait for.
+        let plain = ds(&cfg_for(Mode::Encrypted)).spec.unwrap().template.spec.unwrap();
+        assert!(!plain.volumes.unwrap().iter().any(|v| v.name == IPSEC_VOLUME));
     }
 
     #[test]

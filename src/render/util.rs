@@ -5,7 +5,7 @@ use k8s_openapi::api::core::v1::{
     AppArmorProfile, Capabilities, ConfigMapKeySelector, ConfigMapVolumeSource,
     ContainerPort, EmptyDirVolumeSource, EnvVar, EnvVarSource, HTTPGetAction,
     HostPathVolumeSource, ObjectFieldSelector, PodSecurityContext, Probe, SELinuxOptions,
-    SeccompProfile, SecurityContext, Toleration, Volume, VolumeMount,
+    SeccompProfile, SecretVolumeSource, SecurityContext, Toleration, Volume, VolumeMount,
 };
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
 
@@ -115,6 +115,17 @@ pub fn config_map_volume(name: &str, config_map: &str) -> Volume {
         name: name.to_string(),
         config_map: Some(ConfigMapVolumeSource {
             name: config_map.to_string(),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
+
+pub fn secret_volume(name: &str, secret: &str) -> Volume {
+    Volume {
+        name: name.to_string(),
+        secret: Some(SecretVolumeSource {
+            secret_name: Some(secret.to_string()),
             ..Default::default()
         }),
         ..Default::default()

@@ -256,6 +256,10 @@ pub enum EncryptionType {
     #[default]
     None,
     Wireguard,
+    // Pre-shared key in `kube-system/cilium-ipsec-keys`, which the operator
+    // generates and rotates (src/ipsec.rs, #44). A `//` comment, not `///`:
+    // a doc comment would become a CRD schema description.
+    Ipsec,
 }
 
 impl EncryptionType {
@@ -263,6 +267,7 @@ impl EncryptionType {
         match self {
             EncryptionType::None => "none",
             EncryptionType::Wireguard => "wireguard",
+            EncryptionType::Ipsec => "ipsec",
         }
     }
 }

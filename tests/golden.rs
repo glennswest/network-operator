@@ -47,12 +47,13 @@ fn manifest(mode: &str) -> String {
         }
         _ => "",
     };
-    let envoy = if mode == "overlay-envoy" {
-        "\n    envoy:\n      enabled: true"
-    } else {
-        ""
+    let envoy = match mode {
+        "overlay-envoy" => "\n    envoy:\n      enabled: true",
+        // IPsec (#44): overlay plus the keyfile config and mount.
+        "ipsec" => "\n    encryption:\n      type: ipsec",
+        _ => "",
     };
-    let mode = if mode == "overlay-envoy" { "overlay" } else { mode };
+    let mode = if mode == "overlay-envoy" || mode == "ipsec" { "overlay" } else { mode };
 
     format!(
         r#"apiVersion: network.storm.io/v1
@@ -92,7 +93,7 @@ fn every_mode_matches_its_golden_manifest() {
     let update = std::env::var_os("UPDATE_GOLDEN").is_some();
     let mut stale = Vec::new();
 
-    for name in MODES.iter().map(|(n, _)| *n).chain(["overlay-envoy"]) {
+    for name in MODES.iter().map(|(n, _)| *n).chain(["overlay-envoy", "ipsec"]) {
         let net: Network = serde_yaml::from_str(&manifest(name)).unwrap();
         let rendered = render_to_yaml(&net);
         let path = golden_path(name);
@@ -234,4 +235,30 @@ fn runtime_changeable_fields_do_not_move_object_identities() {
 
         assert_eq!(ids, mutated_ids, "mode {name} ({mode:?}) changed object identities on an mtu change");
     }
+}
+
+/// IPsec (#44) is overlay plus the keyfile: the same objects, and only
+/// cilium-config and the agent DaemonSet differ. The keyfile Secret itself is
+/// not rendered (its key is random) — src/ipsec.rs creates it.
+#[test]
+fn ipsec_only_touches_the_config_and_the_agent() {
+    let render_of = |name: &str| {
+        let net: Network = serde_yaml::from_str(&manifest(name)).unwrap();
+        render::render(&resolve_network(&net).unwrap())
+    };
+    let (plain, ipsec) = (render_of("overlay"), render_of("ipsec"));
+    let ids = |objs: &[render::Rendered]| objs.iter().map(|r| r.id()).collect::<Vec<_>>();
+    assert_eq!(ids(&plain), ids(&ipsec));
+
+    let mut changed = Vec::new();
+    for (a, b) in plain.iter().zip(&ipsec) {
+        if serde_yaml::to_string(&a.obj).unwrap() != serde_yaml::to_string(&b.obj).unwrap() {
+            changed.push(a.id());
+        }
+    }
+    assert_eq!(
+        changed,
+        ["ConfigMap/kube-system/cilium-config", "DaemonSet/kube-system/cilium"]
+    );
+    assert!(!ids(&ipsec).iter().any(|id| id.starts_with("Secret/")));
 }

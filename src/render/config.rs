@@ -105,6 +105,18 @@ pub fn data(cfg: &EffectiveConfig) -> BTreeMap<String, String> {
             set("enable-wireguard", "true");
             set("enable-ipsec", "false");
         }
+        // The keyfile is the Secret src/ipsec.rs keeps, mounted by the agent
+        // (render/agent.rs). The key watcher reloads it on rotation and keeps
+        // the old key for the rotation window so in-flight packets still
+        // decrypt; values are the Cilium chart's defaults (#44).
+        EncryptionType::Ipsec => {
+            set("enable-wireguard", "false");
+            set("enable-ipsec", "true");
+            set("ipsec-key-file", crate::ipsec::KEY_FILE);
+            set("enable-ipsec-key-watcher", "true");
+            set("ipsec-key-rotation-duration", crate::ipsec::ROTATION_DURATION);
+            set("enable-ipsec-encrypted-overlay", "false");
+        }
     }
 
     // --- load balancing / announcements ---
@@ -239,6 +251,24 @@ mod tests {
         let d = data(&cfg_for(Mode::Encrypted));
         assert_eq!(d["enable-wireguard"], "true");
         assert_eq!(d["enable-ipsec"], "false");
+    }
+
+    #[test]
+    fn ipsec_turns_on_ipsec_with_the_mounted_keyfile() {
+        let mut cfg = cfg_for(Mode::Overlay);
+        cfg.encryption = EncryptionType::Ipsec;
+        let d = data(&cfg);
+        assert_eq!(d["enable-ipsec"], "true");
+        assert_eq!(d["enable-wireguard"], "false");
+        assert_eq!(d["ipsec-key-file"], "/etc/ipsec/keys");
+        assert_eq!(d["enable-ipsec-key-watcher"], "true");
+        assert_eq!(d["ipsec-key-rotation-duration"], "5m");
+        assert_eq!(d["enable-ipsec-encrypted-overlay"], "false");
+
+        // And none of it leaks into the other encryption types.
+        for mode in [Mode::Overlay, Mode::Encrypted] {
+            assert!(!data(&cfg_for(mode)).keys().any(|k| k.starts_with("ipsec-")));
+        }
     }
 
     #[test]

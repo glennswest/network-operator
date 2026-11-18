@@ -4,8 +4,9 @@
 //!
 //! 1. resolve the spec into an [`EffectiveConfig`] (mode defaults + validation)
 //! 2. refuse immutable changes against `status.applied*`
-//! 3. render and server-side apply
-//! 4. reap objects we used to render but no longer do
+//! 3. make sure the IPsec keyfile Secret exists (and rotate it on request)
+//!    when IPsec is on, then render and server-side apply
+//! 4. reap objects we used to render but no longer do (the keyfile Secret too)
 //! 5. observe health and write the conditions back
 //!
 //! Drift-heal comes from watching the objects we own: any modification or
@@ -25,11 +26,11 @@ use kube::runtime::Controller;
 use kube::{Api, Client, Resource};
 use tracing::{error, info, warn};
 
-use crate::crd::{Network, NetworkStatus};
+use crate::crd::{EncryptionType, Network, NetworkStatus};
 use crate::modes::{resolve_network, EffectiveConfig, NAMESPACE};
 use crate::render::Rendered;
 use crate::metrics::{FailureReason, Metrics};
-use crate::{apply, health, immutable, render, status};
+use crate::{apply, health, immutable, ipsec, render, status};
 
 /// Resync even when nothing has changed. Catches anything a watch could miss —
 /// notably rollout progress, which changes pod status without touching an
@@ -58,6 +59,9 @@ pub enum Error {
 
     #[error("kubernetes: {0}")]
     Kube(#[from] kube::Error),
+
+    #[error(transparent)]
+    Ipsec(#[from] ipsec::IpsecError),
 }
 
 impl Error {
@@ -67,6 +71,8 @@ impl Error {
             Error::Immutable(_) => FailureReason::Immutable,
             Error::Apply(_) => FailureReason::Apply,
             Error::Kube(_) => FailureReason::Kube,
+            // The keyfile Secret is an object the install needs in place.
+            Error::Ipsec(_) => FailureReason::Apply,
         }
     }
 }
@@ -145,7 +151,25 @@ async fn reconcile(net: Arc<Network>, ctx: Arc<Context>) -> Result<Action, Error
         return Err(Error::Immutable(message));
     }
 
-    // 3. apply
+    // 3. apply. The keyfile Secret first: the agent pods mount it and would
+    // sit in ContainerCreating until it exists.
+    let ipsec_wait = if cfg.encryption == EncryptionType::Ipsec {
+        let requested = net
+            .meta()
+            .annotations
+            .as_ref()
+            .and_then(|a| a.get(ipsec::ROTATE_ANNOTATION))
+            .map(String::as_str);
+        match ipsec::reconcile(&ctx.client, &cfg, requested).await {
+            Ok(wait) => wait,
+            Err(e) => {
+                report_failure(&ctx, &name, &previous, generation, cfg.envoy, &e.to_string()).await?;
+                return Err(Error::Ipsec(e));
+            }
+        }
+    } else {
+        None
+    };
     let objects = render::render(&cfg);
     let deferred = match apply::apply_all(&ctx.client, &objects).await {
         Ok(deferred) => deferred,
@@ -167,11 +191,9 @@ async fn reconcile(net: Arc<Network>, ctx: Arc<Context>) -> Result<Action, Error
     immutable::applied_from(&cfg, &mut next);
     status::write(&ctx.client, &name, &next).await?;
 
-    Ok(Action::requeue(if deferred.is_empty() {
-        RESYNC
-    } else {
-        DEFERRED_RETRY
-    }))
+    let next_pass = if deferred.is_empty() { RESYNC } else { DEFERRED_RETRY };
+    // A held-back key rotation goes ahead as soon as its window has passed.
+    Ok(Action::requeue(ipsec_wait.map_or(next_pass, |w| w.min(next_pass))))
 }
 
 /// Delete objects a previous config rendered but this one does not — otherwise
@@ -183,6 +205,11 @@ async fn reap(ctx: &Context, cfg: &EffectiveConfig, keep: &[Rendered]) -> Result
             info!(object = %candidate.id(), "removing — no longer part of the desired config");
             apply::delete_one(&ctx.client, &candidate).await?;
         }
+    }
+    // Not rendered (its key is random), so not in `reapable`: IPsec off
+    // deletes the keyfile Secret, if this operator made it.
+    if cfg.encryption != EncryptionType::Ipsec {
+        ipsec::remove(&ctx.client).await?;
     }
     Ok(())
 }

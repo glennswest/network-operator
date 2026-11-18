@@ -20,6 +20,7 @@ pub mod controller;
 pub mod crd;
 pub mod health;
 pub mod immutable;
+pub mod ipsec;
 pub mod metrics;
 pub mod modes;
 pub mod pins;
