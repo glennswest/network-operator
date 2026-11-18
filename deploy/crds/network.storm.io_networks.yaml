@@ -115,7 +115,13 @@ spec:
                     nullable: true
                     properties:
                       clusterPoolIPv4MaskSize:
-                        description: Per-node pod CIDR mask carved out of `clusterNetwork`.
+                        description: Per-node pod CIDR mask carved out of each IPv4 `clusterNetwork` CIDR.
+                        format: uint8
+                        minimum: 0.0
+                        nullable: true
+                        type: integer
+                      clusterPoolIPv6MaskSize:
+                        description: Per-node pod CIDR mask carved out of each IPv6 `clusterNetwork` CIDR.
                         format: uint8
                         minimum: 0.0
                         nullable: true
@@ -210,7 +216,7 @@ spec:
                 type: object
               clusterNetwork:
                 default: []
-                description: 'Pod CIDR(s) (OpenShift: `networking.clusterNetwork`). Immutable.'
+                description: 'Pod CIDR(s) (OpenShift: `networking.clusterNetwork`): IPv4, IPv6, or both for dual-stack. The families present are the ones enabled. Immutable.'
                 items:
                   type: string
                 type: array
@@ -232,7 +238,7 @@ spec:
                 type: string
               serviceNetwork:
                 default: []
-                description: 'Service CIDR(s) (OpenShift: `networking.serviceNetwork`). Immutable.'
+                description: 'Service CIDR(s) (OpenShift: `networking.serviceNetwork`), covering the same IP families as `clusterNetwork`. Immutable.'
                 items:
                   type: string
                 type: array

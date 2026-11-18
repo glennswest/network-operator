@@ -227,7 +227,7 @@ until `deploy/crds/` matches).
       overlay only in the 5 ipsec keys + the agent mount/volume). Parity:
       stormcos runs no IPsec, so nothing to compare. Not run on a cluster
       (no test machine runs the operator, #30/#16).
-- [ ] #45 (2026-11-18) IPv6 / dual-stack. Plan: `clusterNetwork` and
+- [x] #45 (2026-11-18) IPv6 / dual-stack. Plan: `clusterNetwork` and
       `serviceNetwork` take IPv4 and/or IPv6 CIDRs; the families present
       turn on `enable-ipv4`/`enable-ipv6` (+ masquerade); both lists must
       cover the same families. New `ipam.clusterPoolIPv6MaskSize` (default
@@ -238,6 +238,10 @@ until `deploy/crds/` matches).
       today's bug: a v6 CIDR went into the ipv4 keys. clusterNetwork stays
       immutable (no in-place v4 -> dual-stack). Golden `dual-stack` (native);
       CRD + golden via sc-build. Not provable live: no IPv6 test machine.
+      2026-11-18 CODE DONE: 09ae765 (feature), 6aadaf5 (docs); CRD and
+      `dual-stack` golden generated under sc-build (184 unit tests, clippy
+      clean). Golden vs native: only the 3 ipv6 cluster-pool/routing keys and
+      enable-ipv6(+masq) true; IPv4-only goldens unchanged. Not seen live.
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
