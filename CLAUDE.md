@@ -211,6 +211,17 @@ until `deploy/crds/` matches).
       `EncryptionType` enum / CRD (was rejected at validation) -> gap #44;
       dual-stack comments in render/config.rs reworded -> gap #45. README,
       deck, CHANGELOG updated.
+- [ ] #44 (2026-11-18) IPsec back in the API. Plan: `src/ipsec.rs` —
+      pure key-line build/parse, SPI rotation (n%15+1, `+` per-tunnel keys,
+      rfc4106(gcm(aes)) 20-byte key/128), `plan()` = keep/create/rotate/
+      wait; async `ensure` creates `kube-system/cilium-ipsec-keys` if absent
+      (owner-ref'd + labelled ours, never overwritten), rotates on the
+      Network annotation `network.storm.io/ipsec-key-rotation` changing (not
+      twice inside the 5m rotation window), deletes only our Secret when
+      encryption leaves ipsec. Render: `enable-ipsec`, `ipsec-key-file`,
+      key watcher, rotation duration; agent mounts the Secret at /etc/ipsec.
+      Key from /dev/urandom (no new crate: no local cargo to relock). Ipsec
+      golden via sc-build `UPDATE_GOLDEN=1`.
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
