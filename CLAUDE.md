@@ -207,6 +207,10 @@ until `deploy/crds/` matches).
       Waiting on the registry entry (owner's setting; command on #27, noted
       to the master); then `component build network-operator`. Catalog
       entry filed: stormcos-options#23.
+- [x] #43 (2026-11-18, P-1 no stubs): `ipsec` removed from the
+      `EncryptionType` enum / CRD (was rejected at validation) -> gap #44;
+      dual-stack comments in render/config.rs reworded -> gap #45. README,
+      deck, CHANGELOG updated.
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;

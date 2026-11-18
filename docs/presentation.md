@@ -224,8 +224,8 @@ Each is an open issue; the docs say so rather than promise it.
 - Hubble relay across nodes (it reads its own node's socket today).
 - **#24** (decision) a validating webhook for immutability: serving cert,
   reachable before the CNI, `failurePolicy`.
-- Out of scope today: Geneve / tunnel-port override, IPv6 / dual-stack,
-  IPsec (rejected at validation).
+- Out of scope today: Geneve / tunnel-port override, IPv6 / dual-stack (#45),
+  IPsec (#44) — none of them in the API.
 
 ---
 

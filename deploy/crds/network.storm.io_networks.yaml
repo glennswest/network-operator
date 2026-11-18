@@ -59,7 +59,6 @@ spec:
                         enum:
                         - none
                         - wireguard
-                        - ipsec
                         nullable: true
                         type: string
                     type: object

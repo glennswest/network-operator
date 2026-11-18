@@ -256,7 +256,6 @@ pub enum EncryptionType {
     #[default]
     None,
     Wireguard,
-    Ipsec,
 }
 
 impl EncryptionType {
@@ -264,7 +263,6 @@ impl EncryptionType {
         match self {
             EncryptionType::None => "none",
             EncryptionType::Wireguard => "wireguard",
-            EncryptionType::Ipsec => "ipsec",
         }
     }
 }

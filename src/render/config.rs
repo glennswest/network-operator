@@ -18,8 +18,8 @@ use super::{
 /// `genevePort`.
 const TUNNEL_PORT: &str = "8472";
 
-/// Dual-stack is not supported yet. Kept as a named constant so the keys that
-/// depend on it move together the day it is.
+/// IPv4 only: the `Network` API has no IPv6 field (#45). One constant so the
+/// keys that follow it cannot disagree.
 const IPV6_ENABLED: bool = false;
 
 pub fn render(cfg: &EffectiveConfig) -> Rendered {
@@ -61,9 +61,7 @@ pub fn data(cfg: &EffectiveConfig) -> BTreeMap<String, String> {
     set("enable-ipv4", "true");
     set("enable-ipv6", bool_str(IPV6_ENABLED));
     set("enable-ipv4-masquerade", "true");
-    // Follows the IPv6 setting rather than being pinned independently. IPv6 is
-    // not supported yet, so this is always false today — but the shape is right
-    // for when it is.
+    // Follows the IPv6 setting rather than being pinned independently.
     set("enable-ipv6-masquerade", bool_str(IPV6_ENABLED));
     set("enable-bpf-masquerade", "true");
     // bpf host routing is the fast path; `legacy` pushes packets back up through
@@ -106,11 +104,6 @@ pub fn data(cfg: &EffectiveConfig) -> BTreeMap<String, String> {
         EncryptionType::Wireguard => {
             set("enable-wireguard", "true");
             set("enable-ipsec", "false");
-        }
-        // Rejected in validation; kept exhaustive so adding it forces a decision.
-        EncryptionType::Ipsec => {
-            set("enable-wireguard", "false");
-            set("enable-ipsec", "true");
         }
     }
 

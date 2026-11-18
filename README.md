@@ -156,7 +156,7 @@ spec:
 | `spec.cilium.mtu` | `0` | 0 = let the agent detect it (key omitted); otherwise 576–9216. |
 | `spec.cilium.kubeProxyReplacement` | `true` | eBPF service handling in place of kube-proxy. |
 | `spec.cilium.hostRouting` | `bpf` | `bpf` \| `legacy` (`enable-host-legacy-routing`). |
-| `spec.cilium.encryption.type` | mode (`none`) | `none` \| `wireguard`. `ipsec` is **rejected** (no keyfile Secret management). |
+| `spec.cilium.encryption.type` | mode (`none`) | `none` \| `wireguard`. IPsec is not in the API (no keyfile Secret management; #44). |
 | `spec.cilium.k8sServiceHost` | — (**required**) | Apiserver address the agent, operator and Envoy dial; with kube-proxy replacement there is no Service route to it until Cilium is up. Whether it should instead be left to the kubelet (rustkube-node injects it per node) or resolved at reconcile time is an owner decision, [#23](https://github.com/glennswest/network-operator/issues/23). |
 | `spec.cilium.k8sServicePort` | `6443` | Non-zero. |
 | `spec.cilium.loadBalancer.ipam` | mode (`false`) | LB-IPAM for `type: LoadBalancer`. When on, `pools` is required. |
@@ -202,7 +202,7 @@ kube-proxy replacement on, bpf host routing, MTU auto.
 | `gatewayConfig.routingViaHost` | `hostRouting: legacy` vs `bpf` |
 | `mtu` | `cilium.mtu` |
 | `genevePort` | no equivalent: VXLAN port is fixed at 8472 |
-| `ipsecConfig` | `encryption.type: wireguard` (ipsec rejected) |
+| `ipsecConfig` | `encryption.type: wireguard` (no IPsec, #44) |
 | MetalLB / external LB | LB-IPAM + L2 or BGP announcements |
 
 ### Immutability
@@ -611,7 +611,7 @@ not do yet:
 - Immutability is enforced by the reconciler, **not** a validating webhook
   (decision #24: cert source, reachability before the CNI, `failurePolicy`).
 - The tunnel protocol is VXLAN only (no Geneve, no port override); IPv6 and
-  dual-stack are not supported; IPsec is rejected.
+  dual-stack are not in the API (#45); neither is IPsec (#44).
 - Rendering is Rust code, not per-Cilium-version templates: `version` changes
   the image digests and the `cilium.io` API version, nothing else. Config
   keys that a newer Cilium renamed are not tracked; the agent and operator

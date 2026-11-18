@@ -482,15 +482,6 @@ fn validate(cfg: &EffectiveConfig) -> Result<(), ValidationError> {
         }
     }
 
-    // IPsec needs a pre-shared keyfile Secret we do not manage yet; failing here
-    // beats installing an agent that crash-loops on a missing key.
-    if cfg.encryption == EncryptionType::Ipsec {
-        return Err(ValidationError::new(
-            "spec.cilium.encryption.type",
-            "ipsec is not supported yet — use wireguard",
-        ));
-    }
-
     // Cluster identity: ClusterMesh requires a distinct id per cluster, and
     // Cilium caps it at 255.
     if cfg.cluster_name.trim().is_empty() {
@@ -753,11 +744,14 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unimplemented_features_rather_than_installing_something_broken() {
-        let mut s = spec(Mode::Overlay);
-        s.cilium.as_mut().unwrap().encryption =
-            Some(EncryptionSpec { kind: Some(EncryptionType::Ipsec) });
-        assert_eq!(err_field(&s), "spec.cilium.encryption.type");
+    fn ipsec_is_not_part_of_the_api() {
+        // IPsec needs a keyfile Secret the operator does not manage (#44), so
+        // it is not an accepted value at all rather than a rejected one (#43).
+        assert!(serde_json::from_str::<EncryptionType>("\"ipsec\"").is_err());
+        assert_eq!(
+            serde_json::from_str::<EncryptionType>("\"wireguard\"").unwrap(),
+            EncryptionType::Wireguard
+        );
     }
 
     #[test]
