@@ -58,6 +58,7 @@ pub struct EffectiveConfig {
 
     pub ipam: IpamMode,
     pub cluster_pool_ipv4_mask_size: u8,
+    pub cluster_pool_ipv6_mask_size: u8,
     pub routing: RoutingMode,
     /// Native routing only: program per-node routes for directly-reachable nodes.
     pub auto_direct_node_routes: bool,
@@ -91,6 +92,32 @@ impl EffectiveConfig {
     pub fn bgp_enabled(&self) -> bool {
         self.announce == Announce::Bgp
     }
+
+    /// The pod CIDRs of one family, in spec order (#45).
+    pub fn pod_cidrs(&self, v6: bool) -> Vec<String> {
+        family(&self.cluster_network, v6)
+    }
+
+    /// IPv4 is on when any pod CIDR is IPv4.
+    pub fn ipv4(&self) -> bool {
+        !self.pod_cidrs(false).is_empty()
+    }
+
+    /// IPv6 is on when any pod CIDR is IPv6; both together are dual-stack.
+    pub fn ipv6(&self) -> bool {
+        !self.pod_cidrs(true).is_empty()
+    }
+
+    /// The LoadBalancer pool CIDRs of one family.
+    pub fn lb_pool_cidrs(&self, v6: bool) -> Vec<String> {
+        family(&self.lb_pools, v6)
+    }
+}
+
+/// The entries of a (validated) CIDR list in one family. IPv6 is told by its
+/// `:`, so this stays a pure string filter.
+fn family(cidrs: &[String], v6: bool) -> Vec<String> {
+    cidrs.iter().filter(|c| c.contains(':') == v6).cloned().collect()
 }
 
 /// Why a `Network` spec could not be resolved into a config we would install.
@@ -183,6 +210,10 @@ pub fn resolve(spec: &NetworkSpec) -> Result<EffectiveConfig, ValidationError> {
             .and_then(|c| c.ipam.as_ref())
             .and_then(|i| i.cluster_pool_ipv4_mask_size)
             .unwrap_or(d.cluster_pool_ipv4_mask_size),
+        cluster_pool_ipv6_mask_size: c
+            .and_then(|c| c.ipam.as_ref())
+            .and_then(|i| i.cluster_pool_ipv6_mask_size)
+            .unwrap_or(d.cluster_pool_ipv6_mask_size),
         routing,
         // Direct node routes only mean anything without an overlay, and only
         // help when the nodes actually share a segment — which is what every
@@ -308,6 +339,7 @@ fn resolve_images(
 struct ModeDefaults {
     ipam: IpamMode,
     cluster_pool_ipv4_mask_size: u8,
+    cluster_pool_ipv6_mask_size: u8,
     routing: RoutingMode,
     mtu: i32,
     kube_proxy_replacement: bool,
@@ -324,6 +356,8 @@ impl ModeDefaults {
         Self {
             ipam: IpamMode::ClusterPool,
             cluster_pool_ipv4_mask_size: 24,
+            // The Cilium chart's default: 256 addresses per node.
+            cluster_pool_ipv6_mask_size: 120,
             routing: RoutingMode::Tunnel,
             mtu: 0,
             kube_proxy_replacement: true,
@@ -365,40 +399,47 @@ fn validate(cfg: &EffectiveConfig) -> Result<(), ValidationError> {
             "at least one pod CIDR is required",
         ));
     }
-    for cidr in &cfg.cluster_network {
-        parse_cidr("spec.clusterNetwork", cidr)?;
-    }
+    let pods = families("spec.clusterNetwork", &cfg.cluster_network)?;
     if cfg.service_network.is_empty() {
         return Err(ValidationError::new(
             "spec.serviceNetwork",
             "at least one service CIDR is required",
         ));
     }
-    for cidr in &cfg.service_network {
-        parse_cidr("spec.serviceNetwork", cidr)?;
+    let services = families("spec.serviceNetwork", &cfg.service_network)?;
+    // A family with pods but no Services (or the reverse) is half a stack:
+    // Services of that family get no ClusterIP, or pods cannot reach them.
+    if pods != services {
+        return Err(ValidationError::new(
+            "spec.serviceNetwork",
+            format!(
+                "must cover the same IP families as clusterNetwork (pods: {}, services: {})",
+                family_names(pods),
+                family_names(services)
+            ),
+        ));
     }
 
-    // cluster-pool carves per-node /N blocks out of the pod CIDR; a mask that is
-    // not strictly longer than the pool leaves room for exactly zero nodes.
+    // cluster-pool carves per-node /N blocks out of each pod CIDR; a mask that
+    // is not strictly longer than the pool leaves room for exactly zero nodes.
     if cfg.ipam == IpamMode::ClusterPool {
-        if !(1..=32).contains(&cfg.cluster_pool_ipv4_mask_size) {
-            return Err(ValidationError::new(
+        if pods.0 {
+            check_node_mask(
+                &cfg.cluster_network,
+                false,
+                cfg.cluster_pool_ipv4_mask_size,
                 "spec.cilium.ipam.clusterPoolIPv4MaskSize",
-                "must be between 1 and 32",
-            ));
+                32,
+            )?;
         }
-        for cidr in &cfg.cluster_network {
-            let net = parse_cidr("spec.clusterNetwork", cidr)?;
-            if net.prefix_len() >= cfg.cluster_pool_ipv4_mask_size {
-                return Err(ValidationError::new(
-                    "spec.cilium.ipam.clusterPoolIPv4MaskSize",
-                    format!(
-                        "must be longer than the clusterNetwork prefix /{} to carve per-node blocks (got /{})",
-                        net.prefix_len(),
-                        cfg.cluster_pool_ipv4_mask_size
-                    ),
-                ));
-            }
+        if pods.1 {
+            check_node_mask(
+                &cfg.cluster_network,
+                true,
+                cfg.cluster_pool_ipv6_mask_size,
+                "spec.cilium.ipam.clusterPoolIPv6MaskSize",
+                128,
+            )?;
         }
     }
 
@@ -500,6 +541,71 @@ fn validate(cfg: &EffectiveConfig) -> Result<(), ValidationError> {
     Ok(())
 }
 
+/// Which IP families a CIDR list covers: (IPv4, IPv6). Every entry must parse.
+fn families(field: &str, cidrs: &[String]) -> Result<(bool, bool), ValidationError> {
+    let mut out = (false, false);
+    for cidr in cidrs {
+        match parse_cidr(field, cidr)? {
+            IpNet::V4(_) => out.0 = true,
+            IpNet::V6(_) => out.1 = true,
+        }
+    }
+    Ok(out)
+}
+
+fn family_names((v4, v6): (bool, bool)) -> &'static str {
+    match (v4, v6) {
+        (true, true) => "IPv4+IPv6",
+        (true, false) => "IPv4",
+        (false, true) => "IPv6",
+        (false, false) => "none",
+    }
+}
+
+/// The per-node mask for one family against that family's pod CIDRs. IPv6 also
+/// has a ceiling: Cilium's cluster-pool allocator (Kubernetes' cidrset) refuses
+/// a mask more than 16 bits longer than the pool, so the chart's /120 default
+/// needs a pool of /104 or longer.
+fn check_node_mask(
+    cluster_network: &[String],
+    v6: bool,
+    mask: u8,
+    field: &str,
+    max: u8,
+) -> Result<(), ValidationError> {
+    if !(1..=max).contains(&mask) {
+        return Err(ValidationError::new(field, format!("must be between 1 and {max}")));
+    }
+    for cidr in cluster_network {
+        let net = parse_cidr("spec.clusterNetwork", cidr)?;
+        if matches!(net, IpNet::V6(_)) != v6 {
+            continue;
+        }
+        if net.prefix_len() >= mask {
+            return Err(ValidationError::new(
+                field,
+                format!(
+                    "must be longer than the clusterNetwork prefix /{} to carve per-node blocks (got /{mask})",
+                    net.prefix_len()
+                ),
+            ));
+        }
+        if v6 && mask - net.prefix_len() > MAX_IPV6_MASK_DIFF {
+            return Err(ValidationError::new(
+                field,
+                format!(
+                    "/{mask} is more than {MAX_IPV6_MASK_DIFF} bits longer than the clusterNetwork prefix /{} — use a longer pool or a shorter mask",
+                    net.prefix_len()
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Cilium's cidrset allocator limit (`clusterSubnetMaxDiff`).
+const MAX_IPV6_MASK_DIFF: u8 = 16;
+
 fn parse_cidr(field: &str, cidr: &str) -> Result<IpNet, ValidationError> {
     cidr.parse::<IpNet>()
         .map_err(|e| ValidationError::new(field, format!("{cidr:?} is not a valid CIDR: {e}")))
@@ -589,6 +695,7 @@ mod tests {
         c.ipam = Some(IpamSpec {
             mode: Some(IpamMode::Kubernetes),
             cluster_pool_ipv4_mask_size: None,
+            cluster_pool_ipv6_mask_size: None,
         });
         c.version = Some("v1.20.2".into());
 
@@ -687,6 +794,73 @@ mod tests {
         assert_eq!(err_field(&s), "spec.serviceNetwork");
     }
 
+    fn with_networks(pods: &[&str], services: &[&str]) -> NetworkSpec {
+        let mut s = spec(Mode::Overlay);
+        s.cluster_network = pods.iter().map(|c| c.to_string()).collect();
+        s.service_network = services.iter().map(|c| c.to_string()).collect();
+        s
+    }
+
+    #[test]
+    fn dual_stack_and_ipv6_only_resolve() {
+        let cfg = resolve(&with_networks(
+            &["10.244.0.0/16", "fd00:10:244::/104"],
+            &["10.96.0.0/12", "fd00:10:96::/112"],
+        ))
+        .unwrap();
+        assert!(cfg.ipv4() && cfg.ipv6());
+        assert_eq!(cfg.pod_cidrs(true), ["fd00:10:244::/104"]);
+        assert_eq!(cfg.cluster_pool_ipv6_mask_size, 120);
+
+        let cfg = resolve(&with_networks(&["fd00:10:244::/104"], &["fd00:10:96::/112"])).unwrap();
+        assert!(!cfg.ipv4() && cfg.ipv6());
+    }
+
+    #[test]
+    fn pods_and_services_must_cover_the_same_families() {
+        let s = with_networks(&["10.244.0.0/16", "fd00:10:244::/104"], &["10.96.0.0/12"]);
+        assert_eq!(err_field(&s), "spec.serviceNetwork");
+        let s = with_networks(&["10.244.0.0/16"], &["10.96.0.0/12", "fd00:10:96::/112"]);
+        assert_eq!(err_field(&s), "spec.serviceNetwork");
+    }
+
+    #[test]
+    fn the_ipv6_node_mask_is_checked_against_the_ipv6_pool_only() {
+        // An IPv6 pool never trips the IPv4 mask (it used to: #45).
+        let mut s = with_networks(
+            &["10.244.0.0/16", "fd00:10:244::/104"],
+            &["10.96.0.0/12", "fd00:10:96::/112"],
+        );
+        assert!(resolve(&s).is_ok());
+
+        // /64 with the default /120: 56 bits more than the allocator takes.
+        s.cluster_network[1] = "fd00:10:244::/64".into();
+        assert_eq!(err_field(&s), "spec.cilium.ipam.clusterPoolIPv6MaskSize");
+        // ... fixed by a mask within 16 bits.
+        s.cilium.as_mut().unwrap().ipam = Some(IpamSpec {
+            cluster_pool_ipv6_mask_size: Some(80),
+            ..Default::default()
+        });
+        assert!(resolve(&s).is_ok());
+
+        // Not longer than the pool, or out of range.
+        for bad in [64, 0, 129] {
+            s.cilium.as_mut().unwrap().ipam = Some(IpamSpec {
+                cluster_pool_ipv6_mask_size: Some(bad),
+                ..Default::default()
+            });
+            assert_eq!(err_field(&s), "spec.cilium.ipam.clusterPoolIPv6MaskSize", "/{bad}");
+        }
+
+        // The kubernetes IPAM takes node podCIDRs as given: no mask to check.
+        s.cilium.as_mut().unwrap().ipam = Some(IpamSpec {
+            mode: Some(IpamMode::Kubernetes),
+            cluster_pool_ipv6_mask_size: Some(0),
+            ..Default::default()
+        });
+        assert!(resolve(&s).is_ok());
+    }
+
     #[test]
     fn rejects_apiserver_endpoint_omission() {
         let mut s = spec(Mode::Overlay);
@@ -700,6 +874,7 @@ mod tests {
         s.cilium.as_mut().unwrap().ipam = Some(IpamSpec {
             mode: None,
             cluster_pool_ipv4_mask_size: Some(16),
+            cluster_pool_ipv6_mask_size: None,
         });
         assert_eq!(err_field(&s), "spec.cilium.ipam.clusterPoolIPv4MaskSize");
     }

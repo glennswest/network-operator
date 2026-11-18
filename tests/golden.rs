@@ -53,7 +53,20 @@ fn manifest(mode: &str) -> String {
         "ipsec" => "\n    encryption:\n      type: ipsec",
         _ => "",
     };
-    let mode = if mode == "overlay-envoy" || mode == "ipsec" { "overlay" } else { mode };
+    // Dual-stack (#45): native routing, so both native-routing CIDRs render.
+    let (cluster, service) = if mode == "dual-stack" {
+        (
+            r#"["10.244.0.0/16", "fd00:10:244::/104"]"#,
+            r#"["10.96.0.0/12", "fd00:10:96::/112"]"#,
+        )
+    } else {
+        (r#"["10.244.0.0/16"]"#, r#"["10.96.0.0/12"]"#)
+    };
+    let mode = match mode {
+        "overlay-envoy" | "ipsec" => "overlay",
+        "dual-stack" => "native",
+        m => m,
+    };
 
     format!(
         r#"apiVersion: network.storm.io/v1
@@ -63,8 +76,8 @@ metadata:
 spec:
   cni: cilium
   mode: {mode}
-  clusterNetwork: ["10.244.0.0/16"]
-  serviceNetwork: ["10.96.0.0/12"]
+  clusterNetwork: {cluster}
+  serviceNetwork: {service}
   cilium:
     version: "1.20.2"
     kubeProxyReplacement: true
@@ -93,7 +106,7 @@ fn every_mode_matches_its_golden_manifest() {
     let update = std::env::var_os("UPDATE_GOLDEN").is_some();
     let mut stale = Vec::new();
 
-    for name in MODES.iter().map(|(n, _)| *n).chain(["overlay-envoy", "ipsec"]) {
+    for name in MODES.iter().map(|(n, _)| *n).chain(["overlay-envoy", "ipsec", "dual-stack"]) {
         let net: Network = serde_yaml::from_str(&manifest(name)).unwrap();
         let rendered = render_to_yaml(&net);
         let path = golden_path(name);
@@ -176,6 +189,7 @@ spec:
     k8sServiceHost: "192.168.8.98"
     ipam:
       clusterPoolIPv4MaskSize: 25
+      clusterPoolIPv6MaskSize: 112
     loadBalancer:
       pools: ["192.168.8.240/28"]
       bgp:
@@ -187,11 +201,13 @@ spec:
     let net: Network = serde_yaml::from_str(yaml).unwrap();
     let cfg = resolve_network(&net).unwrap();
     assert_eq!(cfg.cluster_pool_ipv4_mask_size, 25);
+    assert_eq!(cfg.cluster_pool_ipv6_mask_size, 112);
     assert_eq!(cfg.bgp_local_asn, 64512);
 
     // And back out again under the same names.
     let round_tripped = serde_yaml::to_string(&net.spec).unwrap();
     assert!(round_tripped.contains("clusterPoolIPv4MaskSize"));
+    assert!(round_tripped.contains("clusterPoolIPv6MaskSize"));
     assert!(round_tripped.contains("localASN"));
 }
 

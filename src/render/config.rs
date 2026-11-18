@@ -18,9 +18,6 @@ use super::{
 /// `genevePort`.
 const TUNNEL_PORT: &str = "8472";
 
-/// IPv4 only: the `Network` API has no IPv6 field (#45). One constant so the
-/// keys that follow it cannot disagree.
-const IPV6_ENABLED: bool = false;
 
 pub fn render(cfg: &EffectiveConfig) -> Rendered {
     typed(ConfigMap {
@@ -54,15 +51,23 @@ pub fn data(cfg: &EffectiveConfig) -> BTreeMap<String, String> {
         RoutingMode::Native => {
             // Traffic to these prefixes is routed, not masqueraded — without it
             // native routing NATs pod-to-pod traffic and breaks policy identity.
-            set("ipv4-native-routing-cidr", &cfg.cluster_network.join(","));
+            // One key per family (#45).
+            if cfg.ipv4() {
+                set("ipv4-native-routing-cidr", &cfg.pod_cidrs(false).join(","));
+            }
+            if cfg.ipv6() {
+                set("ipv6-native-routing-cidr", &cfg.pod_cidrs(true).join(","));
+            }
             set("auto-direct-node-routes", bool_str(cfg.auto_direct_node_routes));
         }
     }
-    set("enable-ipv4", "true");
-    set("enable-ipv6", bool_str(IPV6_ENABLED));
-    set("enable-ipv4-masquerade", "true");
-    // Follows the IPv6 setting rather than being pinned independently.
-    set("enable-ipv6-masquerade", bool_str(IPV6_ENABLED));
+    // The families are the ones clusterNetwork has (#45): IPv4, IPv6, or both.
+    // Masquerade follows each family, so pods reach off-cluster addresses
+    // whichever they are using.
+    set("enable-ipv4", bool_str(cfg.ipv4()));
+    set("enable-ipv6", bool_str(cfg.ipv6()));
+    set("enable-ipv4-masquerade", bool_str(cfg.ipv4()));
+    set("enable-ipv6-masquerade", bool_str(cfg.ipv6()));
     set("enable-bpf-masquerade", "true");
     // bpf host routing is the fast path; `legacy` pushes packets back up through
     // the host stack (the OVN local-gateway analogue).
@@ -74,11 +79,20 @@ pub fn data(cfg: &EffectiveConfig) -> BTreeMap<String, String> {
     // --- IPAM ---
     set("ipam", cfg.ipam.as_str());
     if cfg.ipam == IpamMode::ClusterPool {
-        set("cluster-pool-ipv4-cidr", &cfg.cluster_network.join(","));
-        set(
-            "cluster-pool-ipv4-mask-size",
-            &cfg.cluster_pool_ipv4_mask_size.to_string(),
-        );
+        if cfg.ipv4() {
+            set("cluster-pool-ipv4-cidr", &cfg.pod_cidrs(false).join(","));
+            set(
+                "cluster-pool-ipv4-mask-size",
+                &cfg.cluster_pool_ipv4_mask_size.to_string(),
+            );
+        }
+        if cfg.ipv6() {
+            set("cluster-pool-ipv6-cidr", &cfg.pod_cidrs(true).join(","));
+            set(
+                "cluster-pool-ipv6-mask-size",
+                &cfg.cluster_pool_ipv6_mask_size.to_string(),
+            );
+        }
     }
 
     // --- services ---
@@ -269,6 +283,56 @@ mod tests {
         for mode in [Mode::Overlay, Mode::Encrypted] {
             assert!(!data(&cfg_for(mode)).keys().any(|k| k.starts_with("ipsec-")));
         }
+    }
+
+    fn dual_stack(mode: Mode) -> EffectiveConfig {
+        let mut cfg = cfg_for(mode);
+        cfg.cluster_network.push("fd00:10:244::/104".into());
+        cfg.service_network.push("fd00:10:96::/112".into());
+        cfg
+    }
+
+    #[test]
+    fn ipv4_only_is_what_it_always_was() {
+        let d = data(&cfg_for(Mode::Native));
+        assert_eq!(d["enable-ipv4"], "true");
+        assert_eq!(d["enable-ipv6"], "false");
+        assert_eq!(d["enable-ipv4-masquerade"], "true");
+        assert_eq!(d["enable-ipv6-masquerade"], "false");
+        assert!(!d.keys().any(|k| k.starts_with("ipv6-") || k.starts_with("cluster-pool-ipv6")));
+    }
+
+    #[test]
+    fn dual_stack_splits_every_cidr_key_by_family() {
+        let d = data(&dual_stack(Mode::Native));
+        assert_eq!(d["enable-ipv4"], "true");
+        assert_eq!(d["enable-ipv6"], "true");
+        assert_eq!(d["enable-ipv4-masquerade"], "true");
+        assert_eq!(d["enable-ipv6-masquerade"], "true");
+        assert_eq!(d["cluster-pool-ipv4-cidr"], "10.244.0.0/16");
+        assert_eq!(d["cluster-pool-ipv4-mask-size"], "24");
+        assert_eq!(d["cluster-pool-ipv6-cidr"], "fd00:10:244::/104");
+        assert_eq!(d["cluster-pool-ipv6-mask-size"], "120");
+        assert_eq!(d["ipv4-native-routing-cidr"], "10.244.0.0/16");
+        assert_eq!(d["ipv6-native-routing-cidr"], "fd00:10:244::/104");
+
+        // Over a tunnel there is no native-routing CIDR of either family.
+        let t = data(&dual_stack(Mode::Overlay));
+        assert!(!t.keys().any(|k| k.ends_with("native-routing-cidr")));
+    }
+
+    #[test]
+    fn ipv6_only_turns_ipv4_off() {
+        let mut cfg = cfg_for(Mode::Native);
+        cfg.cluster_network = vec!["fd00:10:244::/104".into()];
+        cfg.service_network = vec!["fd00:10:96::/112".into()];
+        let d = data(&cfg);
+        assert_eq!(d["enable-ipv4"], "false");
+        assert_eq!(d["enable-ipv4-masquerade"], "false");
+        assert_eq!(d["enable-ipv6"], "true");
+        assert!(!d.contains_key("cluster-pool-ipv4-cidr"));
+        assert!(!d.contains_key("ipv4-native-routing-cidr"));
+        assert_eq!(d["cluster-pool-ipv6-cidr"], "fd00:10:244::/104");
     }
 
     #[test]

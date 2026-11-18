@@ -47,11 +47,14 @@ pub struct NetworkSpec {
     #[serde(default)]
     pub mode: Mode,
 
-    /// Pod CIDR(s) (OpenShift: `networking.clusterNetwork`). Immutable.
+    /// Pod CIDR(s) (OpenShift: `networking.clusterNetwork`): IPv4, IPv6, or
+    /// both for dual-stack. The families present are the ones enabled.
+    /// Immutable.
     #[serde(default)]
     pub cluster_network: Vec<String>,
 
-    /// Service CIDR(s) (OpenShift: `networking.serviceNetwork`). Immutable.
+    /// Service CIDR(s) (OpenShift: `networking.serviceNetwork`), covering the
+    /// same IP families as `clusterNetwork`. Immutable.
     #[serde(default)]
     pub service_network: Vec<String>,
 
@@ -179,7 +182,7 @@ pub struct CiliumSpec {
 pub struct IpamSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<IpamMode>,
-    /// Per-node pod CIDR mask carved out of `clusterNetwork`.
+    /// Per-node pod CIDR mask carved out of each IPv4 `clusterNetwork` CIDR.
     // camelCase would give `clusterPoolIpv4MaskSize`; the acronym is capitalised
     // in Cilium's own config and in our README, so pin the wire name.
     #[serde(
@@ -188,6 +191,13 @@ pub struct IpamSpec {
         skip_serializing_if = "Option::is_none"
     )]
     pub cluster_pool_ipv4_mask_size: Option<u8>,
+    /// Per-node pod CIDR mask carved out of each IPv6 `clusterNetwork` CIDR.
+    #[serde(
+        default,
+        rename = "clusterPoolIPv6MaskSize",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub cluster_pool_ipv6_mask_size: Option<u8>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]

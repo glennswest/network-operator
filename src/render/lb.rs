@@ -108,6 +108,23 @@ fn l2_policy(cfg: &EffectiveConfig) -> Rendered {
     )
 }
 
+/// One address family per IP family that has something to advertise: the pod
+/// CIDRs, or LoadBalancer pools, of that family (#45). An IPv4-only cluster is
+/// exactly the single ipv4 family it always was.
+fn bgp_families(cfg: &EffectiveConfig) -> Vec<serde_json::Value> {
+    [("ipv4", false), ("ipv6", true)]
+        .into_iter()
+        .filter(|(_, v6)| !cfg.pod_cidrs(*v6).is_empty() || !cfg.lb_pool_cidrs(*v6).is_empty())
+        .map(|(afi, _)| {
+            json!({
+                "afi": afi,
+                "safi": "unicast",
+                "advertisements": { "matchLabels": { ADVERTISE_LABEL.0: ADVERTISE_LABEL.1 } },
+            })
+        })
+        .collect()
+}
+
 fn bgp(cfg: &EffectiveConfig, v: &str) -> Vec<Rendered> {
     let instance = format!("asn{}", cfg.bgp_local_asn);
     let peers: Vec<_> = cfg
@@ -146,13 +163,7 @@ fn bgp(cfg: &EffectiveConfig, v: &str) -> Vec<Rendered> {
             "CiliumBGPPeerConfig",
             "ciliumbgppeerconfigs",
             cluster_meta(cfg, BGP_PEER_CONFIG, &[]),
-            json!({
-                "families": [{
-                    "afi": "ipv4",
-                    "safi": "unicast",
-                    "advertisements": { "matchLabels": { ADVERTISE_LABEL.0: ADVERTISE_LABEL.1 } },
-                }],
-            }),
+            json!({ "families": bgp_families(cfg) }),
         ),
         custom(
             "cilium.io",
@@ -220,6 +231,33 @@ mod tests {
         // Names must be DNS-safe, so dots cannot survive into the peer name.
         assert_eq!(peers[0]["name"], "peer-192-168-8-1");
         assert_eq!(peers[1]["peerASN"], 64513);
+    }
+
+    #[test]
+    fn bgp_families_follow_what_there_is_to_advertise() {
+        let afis = |cfg: &EffectiveConfig| -> Vec<String> {
+            let objs = render(cfg);
+            let peer_cfg = objs.iter().find(|r| r.api.kind == "CiliumBGPPeerConfig").unwrap();
+            spec_of(peer_cfg)["families"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|f| f["afi"].as_str().unwrap().to_string())
+                .collect()
+        };
+        // IPv4-only: exactly the one family it always had.
+        let mut cfg = cfg_for(Mode::Bgp);
+        assert_eq!(afis(&cfg), ["ipv4"]);
+
+        // Dual-stack pods: both.
+        cfg.cluster_network.push("fd00:10:244::/104".into());
+        assert_eq!(afis(&cfg), ["ipv4", "ipv6"]);
+
+        // IPv6-only pods, but an IPv4 LoadBalancer pool still needs ipv4.
+        cfg.cluster_network = vec!["fd00:10:244::/104".into()];
+        assert_eq!(afis(&cfg), ["ipv4", "ipv6"]);
+        cfg.lb_pools = vec!["fd00:8::/120".into()];
+        assert_eq!(afis(&cfg), ["ipv6"]);
     }
 
     #[test]
