@@ -156,7 +156,7 @@ spec:
 | `spec.cilium.mtu` | `0` | 0 = let the agent detect it (key omitted); otherwise 576–9216. |
 | `spec.cilium.kubeProxyReplacement` | `true` | eBPF service handling in place of kube-proxy. |
 | `spec.cilium.hostRouting` | `bpf` | `bpf` \| `legacy` (`enable-host-legacy-routing`). |
-| `spec.cilium.encryption.type` | mode (`none`) | `none` \| `wireguard`. IPsec is not in the API (no keyfile Secret management; #44). |
+| `spec.cilium.encryption.type` | mode (`none`) | `none` \| `wireguard` \| `ipsec`. `ipsec` uses the keyfile Secret `kube-system/cilium-ipsec-keys`, which the operator creates if absent and rotates on request — see [IPsec keys](#ipsec-keys-44). |
 | `spec.cilium.k8sServiceHost` | — (**required**) | Apiserver address the agent, operator and Envoy dial; with kube-proxy replacement there is no Service route to it until Cilium is up. Whether it should instead be left to the kubelet (rustkube-node injects it per node) or resolved at reconcile time is an owner decision, [#23](https://github.com/glennswest/network-operator/issues/23). |
 | `spec.cilium.k8sServicePort` | `6443` | Non-zero. |
 | `spec.cilium.loadBalancer.ipam` | mode (`false`) | LB-IPAM for `type: LoadBalancer`. When on, `pools` is required. |
@@ -202,8 +202,44 @@ kube-proxy replacement on, bpf host routing, MTU auto.
 | `gatewayConfig.routingViaHost` | `hostRouting: legacy` vs `bpf` |
 | `mtu` | `cilium.mtu` |
 | `genevePort` | no equivalent: VXLAN port is fixed at 8472 |
-| `ipsecConfig` | `encryption.type: wireguard` (no IPsec, #44) |
+| `ipsecConfig` | `encryption.type: ipsec` (or `wireguard`) |
 | MetalLB / external LB | LB-IPAM + L2 or BGP announcements |
+
+### IPsec keys (#44)
+
+`encryption.type: ipsec` sets `enable-ipsec: true`,
+`ipsec-key-file: /etc/ipsec/keys`, `enable-ipsec-key-watcher: true` and
+`ipsec-key-rotation-duration: 5m` (the Cilium chart's defaults) and mounts
+the Secret `kube-system/cilium-ipsec-keys` read-only into the agent at
+`/etc/ipsec`. The key itself is `src/ipsec.rs`:
+
+- **Created if absent, never overwritten.** A missing Secret gets one line,
+  `3+ rfc4106(gcm(aes)) <20 random bytes, hex> 128` — the line Cilium's docs
+  generate (AES-GCM-128 key + salt from `/dev/urandom`, SPI 3, per-tunnel
+  keys). It is labelled `managed-by: network-operator` and owned by the
+  `Network`. A Secret that already exists — say one made by hand before
+  switching — is used as it is.
+- **Rotated on request.** Set (or change) the annotation
+  `network.storm.io/ipsec-key-rotation` on the `Network`, to any new value:
+  ```sh
+  kubectl annotate network cluster --overwrite network.storm.io/ipsec-key-rotation="$(date +%s)"
+  ```
+  The next pass writes a new key with the next SPI (1–15, wrapping 15 -> 1)
+  and the same algorithm, key length, ICV size and `+` as the current line,
+  and records the value on the Secret so it is acted on once. Agents load
+  the new file through the key watcher and keep the old key for 5 minutes;
+  a second request inside that window waits until it has passed. Only the
+  four-field AEAD line is rotated; another shape fails the pass
+  (`Degraded`) rather than be guessed at.
+- **Off means gone.** Leaving `ipsec` deletes the Secret if the operator
+  created it; a hand-made one is left alone.
+- The key is never logged. Deleting the Secret by hand makes the next pass
+  generate a fresh one at SPI 3; agents still holding a different SPI-3 key
+  disagree until they all load it — rotate instead.
+
+Not yet seen on a cluster: no test machine runs the operator (#30, #16), so
+the Secret volume on rustkube-node and the agent's IPsec datapath are
+checked by unit and golden tests only.
 
 ### Immutability
 
@@ -226,14 +262,16 @@ every violation, and does not move the baseline.
 
 1. **Resolve** the spec (mode defaults + overrides + validation).
 2. **Check immutability** against `status.applied*`.
-3. **Render and apply** every object in order (`src/apply.rs`).
+3. **Render and apply** every object in order (`src/apply.rs`). With IPsec
+   on, the keyfile Secret is ensured first (`src/ipsec.rs`): the agent mounts it.
 4. **Reap** the conditional objects this config no longer renders: the Hubble
    relay and Services, the standalone `cilium-envoy` objects, and the LB/L2/BGP
-   CRs (`render::reapable`).
+   CRs (`render::reapable`); with IPsec off, the keyfile Secret if the operator
+   made it.
 5. **Observe** health and write status, including the new `applied*`.
 
 Requeue: 60 s after success, 10 s while Cilium CRs are deferred, 15 s after
-an error. Any failure in steps 1–3 is written to the CR as
+an error, sooner when a held-back IPsec key rotation becomes due. Any failure in steps 1–3 is written to the CR as
 `Degraded=True (ReconcileFailed)`, while `Available` keeps reflecting the
 workloads that are actually running.
 
@@ -611,7 +649,7 @@ not do yet:
 - Immutability is enforced by the reconciler, **not** a validating webhook
   (decision #24: cert source, reachability before the CNI, `failurePolicy`).
 - The tunnel protocol is VXLAN only (no Geneve, no port override); IPv6 and
-  dual-stack are not in the API (#45); neither is IPsec (#44).
+  dual-stack are not in the API (#45).
 - Rendering is Rust code, not per-Cilium-version templates: `version` changes
   the image digests and the `cilium.io` API version, nothing else. Config
   keys that a newer Cilium renamed are not tracked; the agent and operator
