@@ -144,15 +144,16 @@ spec:
 |---|---|---|
 | `spec.cni` | `cilium` | The only value. |
 | `spec.mode` | `overlay` | `overlay` \| `native` \| `bgp` \| `encrypted` \| `bare-metal`. |
-| `spec.clusterNetwork` | — (**required**) | Pod CIDR(s), at least one, each a valid CIDR. Immutable. |
-| `spec.serviceNetwork` | — (**required**) | Service CIDR(s), at least one. Immutable. Recorded in status and guarded; not written into `cilium-config`. |
+| `spec.clusterNetwork` | — (**required**) | Pod CIDR(s), at least one, each a valid CIDR: IPv4, IPv6, or both (dual-stack, #45). The families present set `enable-ipv4` / `enable-ipv6` and their masquerade; cluster-pool and native routing get one key per family (`cluster-pool-ipv4-cidr` / `cluster-pool-ipv6-cidr`, `ipv4-` / `ipv6-native-routing-cidr`). Immutable, so a running IPv4 cluster cannot be made dual-stack in place. |
+| `spec.serviceNetwork` | — (**required**) | Service CIDR(s), at least one, covering the same IP families as `clusterNetwork`. Immutable. Recorded in status and guarded; not written into `cilium-config`. |
 | `spec.cilium.version` | `1.20.2` | Resolved to a digest per image via `src/pins.rs` (pinned today: `1.20.2`); a leading `v` is accepted. An unpinned version is **rejected** unless `images` names each needed image by digest. Bumping it is a rolling upgrade. |
 | `spec.cilium.images.agent` / `.operator` / `.hubbleRelay` | from the pin | Full references, each **must** be `<repository>@sha256:<64 hex>`; a tag is rejected. Each one set wins over the pin. `hubbleRelay` is only needed with Hubble on. |
 | `spec.cilium.registry` | `quay.io/cilium` | Repository prefix for the pinned `cilium`, `operator-generic` and `hubble-relay` digests and the `cilium-envoy` default. A mirror serves the same bytes, so the digest carries over. |
 | `spec.cilium.hubble.enabled` | `true` | The agent's Hubble server plus `hubble-relay`, `hubble-peer` and `hubble-metrics`. Turning it off deletes those objects. |
 | `spec.cilium.ipam.mode` | mode (`cluster-pool`) | `cluster-pool` \| `kubernetes`. Immutable. |
-| `spec.cilium.ipam.clusterPoolIPv4MaskSize` | `24` | 1–32 and strictly longer than every `clusterNetwork` prefix (cluster-pool only). |
-| `spec.cilium.routing.mode` | mode | `tunnel` (VXLAN, port 8472 — not configurable) \| `native` (sets `ipv4-native-routing-cidr` = clusterNetwork and `auto-direct-node-routes: true`). Immutable. |
+| `spec.cilium.ipam.clusterPoolIPv4MaskSize` | `24` | 1–32 and strictly longer than every IPv4 `clusterNetwork` prefix (cluster-pool only). |
+| `spec.cilium.ipam.clusterPoolIPv6MaskSize` | `120` | The Cilium chart's default. 1–128, strictly longer than every IPv6 `clusterNetwork` prefix and at most 16 bits longer (Cilium's cluster-pool allocator refuses more), so the default needs an IPv6 pool of /104 or longer; a /64 pool needs a mask of /80 or shorter. Cluster-pool only. |
+| `spec.cilium.routing.mode` | mode | `tunnel` (VXLAN, port 8472 — not configurable) \| `native` (sets `ipv4-native-routing-cidr` / `ipv6-native-routing-cidr` = that family's clusterNetwork, and `auto-direct-node-routes: true`). Immutable. |
 | `spec.cilium.mtu` | `0` | 0 = let the agent detect it (key omitted); otherwise 576–9216. |
 | `spec.cilium.kubeProxyReplacement` | `true` | eBPF service handling in place of kube-proxy. |
 | `spec.cilium.hostRouting` | `bpf` | `bpf` \| `legacy` (`enable-host-legacy-routing`). |
@@ -163,7 +164,7 @@ spec:
 | `spec.cilium.loadBalancer.pools` | `[]` | CIDRs for `CiliumLoadBalancerIPPool/storm-default`. |
 | `spec.cilium.loadBalancer.announce` | mode (`none`) | `none` \| `l2` \| `bgp`. Anything but `none` requires `ipam: true`; `bgp` requires native routing. |
 | `spec.cilium.loadBalancer.bgp.localASN` | `0` | Required (1–4294967295) when announcing via BGP. |
-| `spec.cilium.loadBalancer.bgp.peers[]` | `[]` | `{address, asn}`; at least one for BGP; address must be an IP. Every node peers (no node selector); advertises PodCIDR + LoadBalancer IPs. |
+| `spec.cilium.loadBalancer.bgp.peers[]` | `[]` | `{address, asn}`; at least one for BGP; address must be an IP. Every node peers (no node selector); advertises PodCIDR + LoadBalancer IPs, in the `ipv4` and/or `ipv6` family — whichever the pod CIDRs or LB pools have. |
 | `spec.cilium.envoy.enabled` | `false` | Split the L7 proxy into the `cilium-envoy` DaemonSet. |
 | `spec.cilium.envoy.image` | `<registry>/cilium-envoy:v1.36.9-1782267392-edeb3f2…` | The one image still named by **tag**: Envoy is versioned independently of Cilium, the default is from a 1.19 install, and nothing pins a digest for it yet (#20). Set it explicitly when running standalone Envoy on 1.20. |
 | `spec.cilium.clusterName` | `default` | Non-empty. |
@@ -648,8 +649,10 @@ not do yet:
 
 - Immutability is enforced by the reconciler, **not** a validating webhook
   (decision #24: cert source, reachability before the CNI, `failurePolicy`).
-- The tunnel protocol is VXLAN only (no Geneve, no port override); IPv6 and
-  dual-stack are not in the API (#45).
+- The tunnel protocol is VXLAN only (no Geneve, no port override).
+- IPv6 and dual-stack (#45) are rendered and unit/golden tested but not yet
+  seen on a cluster: no test machine has IPv6 (or runs the operator, #30).
+  The Services this operator renders (Hubble's) stay single-stack.
 - Rendering is Rust code, not per-Cilium-version templates: `version` changes
   the image digests and the `cilium.io` API version, nothing else. Config
   keys that a newer Cilium renamed are not tracked; the agent and operator
