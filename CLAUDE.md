@@ -211,7 +211,7 @@ until `deploy/crds/` matches).
       `EncryptionType` enum / CRD (was rejected at validation) -> gap #44;
       dual-stack comments in render/config.rs reworded -> gap #45. README,
       deck, CHANGELOG updated.
-- [ ] #44 (2026-11-18) IPsec back in the API. Plan: `src/ipsec.rs` —
+- [x] #44 (2026-11-18) IPsec back in the API. Plan: `src/ipsec.rs` —
       pure key-line build/parse, SPI rotation (n%15+1, `+` per-tunnel keys,
       rfc4106(gcm(aes)) 20-byte key/128), `plan()` = keep/create/rotate/
       wait; async `ensure` creates `kube-system/cilium-ipsec-keys` if absent
@@ -222,6 +222,11 @@ until `deploy/crds/` matches).
       key watcher, rotation duration; agent mounts the Secret at /etc/ipsec.
       Key from /dev/urandom (no new crate: no local cargo to relock). Ipsec
       golden via sc-build `UPDATE_GOLDEN=1`.
+      2026-11-18 CODE DONE: 0abde4d (feature), 070b9fd (docs); golden from
+      sc-build at 070b9fd (177 unit + 6 golden, clippy clean; differs from
+      overlay only in the 5 ipsec keys + the agent mount/volume). Parity:
+      stormcos runs no IPsec, so nothing to compare. Not run on a cluster
+      (no test machine runs the operator, #30/#16).
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
