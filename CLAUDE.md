@@ -207,6 +207,9 @@ until `deploy/crds/` matches).
       Waiting on the registry entry (owner's setting; command on #27, noted
       to the master); then `component build network-operator`. Catalog
       entry filed: stormcos-options#23.
+      2026-11-20: master added the registry entry (export matches #27's
+      command, start=false); image build 31bd4d7acc59 requested at 0068cce.
+      Close when the image exists and `component fetch` returns the binary.
 - [x] #43 (2026-11-18, P-1 no stubs): `ipsec` removed from the
       `EncryptionType` enum / CRD (was rejected at validation) -> gap #44;
       dual-stack comments in render/config.rs reworded -> gap #45. README,
