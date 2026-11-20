@@ -153,7 +153,7 @@ From the code, working now:
 ## Interfaces
 
 **The `Network` CR** — `network.storm.io/v1`, cluster-scoped, short name `net`,
-named `cluster`. Required: `clusterNetwork`, `serviceNetwork`,
+named `cluster` (any other: `Degraded`, ignored). Required: `clusterNetwork`, `serviceNetwork`,
 `cilium.k8sServiceHost`. `kubectl get net` → Mode, Version, Available,
 Progressing, Degraded.
 

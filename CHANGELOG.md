@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-20
+- **fix:** only the `Network` named `cluster` is reconciled (#46, finding `067b10625fd1`). Every `Network` CR used to render, apply and own the same fixed `kube-system` Cilium objects, so a second one fought the first on every requeue and deleting either garbage-collected the shared install. Any other `Network` now gets `Degraded=True` / `Available=False` / `Progressing=False` with reason `NotTheClusterNetwork` and nothing else; its status is rewritten only when it changes.
+
 ### 2026-11-18
 - **feat:** IPv6 and dual-stack (#45). `clusterNetwork` takes IPv4 and/or IPv6 CIDRs; the families present set `enable-ipv4`/`enable-ipv6` and `enable-ipv4-masquerade`/`enable-ipv6-masquerade`, and `serviceNetwork` must cover the same families. New `spec.cilium.ipam.clusterPoolIPv6MaskSize` (default 120; longer than each IPv6 pool prefix, at most 16 bits more). cluster-pool renders `cluster-pool-ipv6-cidr`/`-mask-size`, native routing `ipv6-native-routing-cidr`, and the BGP peer config adds the `ipv6` family when pods or LB pools have IPv6. New `dual-stack` golden (native mode); IPv4-only renders are unchanged.
 - **fix:** an IPv6 CIDR in `clusterNetwork` was written into `cluster-pool-ipv4-cidr` / `ipv4-native-routing-cidr` and then failed the IPv4 node-mask check; each family now goes to its own keys and mask (#45).

@@ -1,5 +1,6 @@
 //! The `Network` custom resource — the single source of truth for the cluster
-//! network. Cluster-scoped, conventionally named `cluster`, with a `/status`
+//! network. Cluster-scoped and a singleton named `cluster` (any other is only
+//! marked `Degraded`, never reconciled, #46), with a `/status`
 //! subresource carrying cluster-operator-style conditions.
 //!
 //! Everything under `spec.cilium` is optional: `spec.mode` supplies the default
@@ -11,7 +12,7 @@ use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// Conventional name of the singleton `Network` object.
+/// Name of the singleton `Network` object, the only one reconciled (#46).
 pub const NETWORK_NAME: &str = "cluster";
 
 #[derive(CustomResource, Clone, Debug, Default, Serialize, Deserialize, JsonSchema, PartialEq)]

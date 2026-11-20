@@ -105,8 +105,14 @@ is listed under [Known gaps](#known-gaps).
 ## The `Network` custom resource
 
 `network.storm.io/v1`, kind `Network`, plural `networks`, short name `net`,
-**cluster-scoped**, conventionally named `cluster`, with a `/status`
-subresource. `kubectl get net` prints Mode, Version, Available, Progressing,
+**cluster-scoped**, a singleton named `cluster`, with a `/status`
+subresource. Only the `Network` named `cluster` is reconciled (#46): the
+render writes fixed `kube-system` names, so two `Network`s would fight over
+one install, and deleting either would garbage-collect it through its owner
+references. Any other `Network` is never rendered, applied or reaped for;
+it gets `Degraded=True`, `Available=False`, `Progressing=False`, reason
+`NotTheClusterNetwork`, saying it is ignored. The name is checked by the
+operator, not at admission (see [Known gaps](#known-gaps)). `kubectl get net` prints Mode, Version, Available, Progressing,
 Degraded. The CRD in `deploy/crds/` is generated from `src/crd.rs`
 (`make crds`) — never hand-edit it; a unit test fails if it is stale.
 
@@ -649,6 +655,8 @@ not do yet:
 
 - Immutability is enforced by the reconciler, **not** a validating webhook
   (decision #24: cert source, reachability before the CNI, `failurePolicy`).
+  The same holds for the singleton name (#46): a `Network` not named
+  `cluster` is admitted, then marked `Degraded` and ignored.
 - The tunnel protocol is VXLAN only (no Geneve, no port override).
 - IPv6 and dual-stack (#45) are rendered and unit/golden tested but not yet
   seen on a cluster: no test machine has IPv6 (or runs the operator, #30).

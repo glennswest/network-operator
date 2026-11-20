@@ -229,6 +229,36 @@ pub fn conditions(
         .collect()
 }
 
+/// Reason on every condition of a `Network` that is not the singleton.
+pub const NOT_THE_CLUSTER_NETWORK: &str = "NotTheClusterNetwork";
+
+/// The conditions of a `Network` other than [`crate::crd::NETWORK_NAME`]:
+/// `Degraded` (it needs a person to delete it), neither `Available` nor
+/// `Progressing`. Every `Network` would render the same fixed `kube-system`
+/// objects, so only the singleton is reconciled (#46).
+pub fn not_the_cluster_network(
+    prev: &[Condition],
+    name: &str,
+    generation: i64,
+    now: &Time,
+) -> Vec<Condition> {
+    let message = format!(
+        "only the Network named \"{}\" is reconciled; \"{name}\" is ignored \
+         (every Network would drive the same kube-system Cilium objects) — delete it",
+        crate::crd::NETWORK_NAME
+    );
+    let draft = |type_, status| Draft {
+        type_,
+        status,
+        reason: NOT_THE_CLUSTER_NETWORK,
+        message: message.clone(),
+    };
+    [draft(AVAILABLE, false), draft(PROGRESSING, false), draft(DEGRADED, true)]
+        .into_iter()
+        .map(|c| finish(prev, c, generation, now))
+        .collect()
+}
+
 /// A condition before its timestamp has been resolved.
 struct Draft {
     type_: &'static str,
@@ -497,6 +527,23 @@ mod tests {
 
     fn status_of(c: &[Condition], t: &str) -> String {
         find(c, t).unwrap().status.clone()
+    }
+
+    #[test]
+    fn a_network_other_than_cluster_is_degraded_and_says_why() {
+        let c = not_the_cluster_network(&[], "second", 3, &now());
+        assert_eq!(status_of(&c, DEGRADED), "True");
+        assert_eq!(status_of(&c, AVAILABLE), "False");
+        assert_eq!(status_of(&c, PROGRESSING), "False");
+        for cond in &c {
+            assert_eq!(cond.reason, NOT_THE_CLUSTER_NETWORK);
+            assert!(cond.message.contains("\"second\" is ignored"), "{}", cond.message);
+            assert!(cond.message.contains("\"cluster\""), "{}", cond.message);
+            assert_eq!(cond.observed_generation, Some(3));
+        }
+        // A second pass keeps the transition time: nothing flipped.
+        let again = not_the_cluster_network(&c, "second", 3, &later());
+        assert_eq!(again, c);
     }
 
     #[test]

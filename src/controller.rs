@@ -9,6 +9,12 @@
 //! 4. reap objects we used to render but no longer do (the keyfile Secret too)
 //! 5. observe health and write the conditions back
 //!
+//! Only the `Network` named `cluster` ([`NETWORK_NAME`]) is reconciled (#46):
+//! the render writes fixed `kube-system` names, so a second `Network` would
+//! fight the first over the same objects (each requeue undoing the other) and
+//! deleting it would garbage-collect the shared install through its owner
+//! references. Any other `Network` gets only a `Degraded` condition saying so.
+//!
 //! Drift-heal comes from watching the objects we own: any modification or
 //! deletion of the DaemonSet, Deployment or ConfigMap maps back to the owning
 //! `Network` and re-triggers the pass, which re-applies our intent.
@@ -26,7 +32,7 @@ use kube::runtime::Controller;
 use kube::{Api, Client, Resource};
 use tracing::{error, info, warn};
 
-use crate::crd::{EncryptionType, Network, NetworkStatus};
+use crate::crd::{EncryptionType, Network, NetworkStatus, NETWORK_NAME};
 use crate::modes::{resolve_network, EffectiveConfig, NAMESPACE};
 use crate::render::Rendered;
 use crate::metrics::{FailureReason, Metrics};
@@ -125,6 +131,21 @@ async fn reconcile(net: Arc<Network>, ctx: Arc<Context>) -> Result<Action, Error
     let name = net.meta().name.clone().unwrap_or_default();
     let generation = net.meta().generation.unwrap_or(0);
     let previous = net.status.clone().unwrap_or_default();
+
+    // 0. the singleton only: never render, apply, reap or own anything for
+    // another Network.
+    if !is_singleton(&name) {
+        warn!(network = %name, "ignored: only the Network named {NETWORK_NAME} is reconciled");
+        let mut next = previous.clone();
+        next.conditions =
+            health::not_the_cluster_network(&previous.conditions, &name, generation, &now());
+        next.observed_generation = Some(generation);
+        // Unchanged status is not rewritten, so the write cannot re-trigger us.
+        if next != previous {
+            status::write(&ctx.client, &name, &next).await?;
+        }
+        return Ok(Action::await_change());
+    }
 
     // 1. resolve
     let cfg = match resolve_network(&net) {
@@ -239,10 +260,28 @@ async fn report_failure(
     Ok(())
 }
 
+/// Whether this `Network` is the one the operator reconciles.
+fn is_singleton(name: &str) -> bool {
+    name == NETWORK_NAME
+}
+
 fn on_error(_net: Arc<Network>, _err: &Error, _ctx: Arc<Context>) -> Action {
     Action::requeue(RETRY)
 }
 
 fn now() -> Time {
     Time(chrono::Utc::now())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_the_network_named_cluster_is_reconciled() {
+        assert!(is_singleton("cluster"));
+        for other in ["", "second", "Cluster", "cluster-2", "default"] {
+            assert!(!is_singleton(other), "{other:?} must not drive the install");
+        }
+    }
 }

@@ -248,6 +248,12 @@ until `deploy/crds/` matches).
       `dual-stack` golden generated under sc-build (184 unit tests, clippy
       clean). Golden vs native: only the 3 ipv6 cluster-pool/routing keys and
       enable-ipv6(+masq) true; IPv4-only goldens unchanged. Not seen live.
+- [ ] #46 (2026-11-20, P1 review finding 067b10625fd1) every Network CR
+      reconciled the same kube-system install. Fix: `controller::reconcile`
+      acts only on the `Network` named `cluster`; any other gets
+      `health::not_the_cluster_network` (Degraded, reason
+      `NotTheClusterNetwork`), written only when changed, and
+      `await_change`. No admission check (CEL/webhook not used; #24).
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
