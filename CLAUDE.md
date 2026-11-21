@@ -292,11 +292,13 @@ until `deploy/crds/` matches).
       README/CHANGELOG; CRD text (pendingNodes) regenerated under sc-build.
       dab468a (fix) + 367b883 (CRD); sc-build rc=0 at 367b883: 201 unit +
       3+6+3, test/ 36, clippy both. Not run on a cluster (#30/#16).
-- [ ] #51 (2026-11-21, P1 review finding 9a9978e141ed) a failed namespace
+- [x] #51 (2026-11-21, P1 review finding 9a9978e141ed) a failed namespace
       default write still gave Ready. Fix: pure `vlan::record_default_write`
       (error, or returned annotation != wanted -> waiting on the wanted VLAN
       and the one still named); controller passes the patch result. Test
       `a_failed_namespace_default_write_keeps_the_vlan_waiting`.
+      ad5a57a; sc-build rc=0 there: 202 unit + 3+6+3, test/ 36, clippy
+      both. Not run on a cluster (#30/#16).
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
