@@ -266,13 +266,17 @@ until `deploy/crds/` matches).
       data/binaryData, PUT with the read resourceVersion, 5 tries on 409).
       ee7ea4e; sc-build rc=0 there 2026-11-21 (191 unit + 3+6+3, clippy
       clean). Not run on a cluster (no test machine runs the operator, #30).
-- [ ] #48 (2026-11-21, P1 review finding 4337dd4c99d7) a ConfigMap-only
+- [x] #48 (2026-11-21, P1 review finding 4337dd4c99d7) a ConfigMap-only
       edit never rolled Cilium. Fix: pod-template annotation
       `network.storm.io/config-hash` (render/util.rs `config_hash`, FNV-1a 64
       length-prefixed, pinned value) on the agent DS + cilium-operator (of
       `cilium-config`) and hubble-relay (of its config); health: a status
       with an older `observedGeneration` is `RolloutInProgress`. Goldens
       gain only the annotation (hashes computed independently in Python).
+      1a00f9b + 7cc619d (ipsec golden check: operator may differ by the hash
+      only, and must). sc-build rc=0 at 7cc619d: 197 unit + 3+6+3, test/ 36,
+      clippy both (auto-filed #53 from 1a00f9b closed by it). Not run on a
+      cluster (no test machine runs the operator, #30).
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
