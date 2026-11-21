@@ -310,6 +310,10 @@ until `deploy/crds/` matches).
       3c4c2ff PASSED on pvetest1 (cc9b077f0d) and pvetest2 (b12b5e1664):
       5 skips, exit 0: the plumbing is proven. Item moved after #27 (an
       image is needed before the operator can run anywhere).
+      2026-11-21: #27 closed (image f22c3c982493), so the only blocker is a
+      non-stormcos rustkube cluster. Needs-owner, re-posted on #16: close on
+      plumbing + split the operator checks (rec.), a non-stormcos target, or
+      a one-off cluster. Stopped there; no code change.
 - Open: #8 (drift-heal test + must-gather; collector filed as
   stormcos_qa#22; 2026-10-06 nothing left here — proposed after
   decision #19, which picks where drift-heal runs) — P3. #9 also carries the envoy tag mismatch
