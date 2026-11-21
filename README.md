@@ -378,7 +378,9 @@ NAD per namespace plus one bridge VLAN entry per uplink port.
   rtnetlink (`src/vlan/netlink.rs`; the image has no iproute2). For the one
   bridge it is given (`--bridge`, default `stormbr0`) it turns
   `vlan_filtering` on (never off) and adds each VLAN *tagged* on the uplink
-  ports. It removes only entries it added itself (listed as `owned` in its
+  ports. A named `uplink` must be one of them: a port that is not a NIC or
+  a bond (a pod's veth or tap) is refused and reported as a problem, never
+  tagged. It removes only entries it added itself (listed as `owned` in its
   report), never touches VLAN 1 (the ports' PVID), and never creates,
   enslaves or re-addresses a link. Its report goes on its node as
   `network.storm.io/vlan-agent` (JSON: bridge, `vlanFiltering`, `present`,

@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-21 (#49)
+- **fix (security):** a VLAN's named `uplink` must be a NIC or a bond (#49, finding `107fe0bf559c`). The node agent used to accept any port of the bridge by name, so a `VLAN` naming a pod's veth or tap added that VLAN, tagged, to another workload's port and put the pod on it. Such a VLAN is now not placed; the agent reports `uplink <port> on bridge <bridge> is not a NIC or bond` in its node report, so the VLAN shows the node as pending. The automatic (unset) choice was already NICs and bonds only.
+
 ### 2026-11-21 (#48)
 - **fix:** a ConfigMap-only edit now rolls out Cilium (#48, finding `4337dd4c99d7`). Changing `mtu`, encryption, host routing or `k8sServiceHost` used to update `cilium-config` and leave the agent DaemonSet and `cilium-operator` Deployment templates unchanged, so the running pods kept their startup configuration while the `Network` reported the new generation applied. Both templates now carry the annotation `network.storm.io/config-hash` (a deterministic FNV-1a 64 digest of the rendered `cilium-config` data), and `hubble-relay` carries one of `hubble-relay-config`. Every golden gains the annotation; nothing else in them changes.
 - **fix:** `Progressing` stays `RolloutInProgress` while a workload's status reports an older `observedGeneration` than its spec (#48). Before this, the status left from the previous template, with every replica counted as updated, could read as settled right after an apply. If no `observedGeneration` is reported, the counts are taken as they are.

@@ -77,8 +77,11 @@ pub struct Actions {
 /// The ports each wanted VLAN goes on (`Err`: why it cannot be placed).
 fn targets<'a>(w: &Wanted, ports: &'a BTreeMap<String, Port>, bridge: &str) -> Result<Vec<&'a String>, String> {
     match &w.uplink {
+        // A named port must leave the node too: a veth or tap is another
+        // workload's port, and tagging it would put that pod on this VLAN.
         Some(u) => match ports.get_key_value(u) {
-            Some((name, _)) => Ok(vec![name]),
+            Some((name, p)) if p.uplink => Ok(vec![name]),
+            Some(_) => Err(format!("uplink {u} on bridge {bridge} is not a NIC or bond")),
             None => Err(format!("uplink {u} is not a port of bridge {bridge}")),
         },
         None => {
@@ -373,6 +376,19 @@ mod tests {
         let a = actions(&[x], &ports(), &owned(&[]), "br");
         assert!(a.add.is_empty());
         assert_eq!(a.problems[&10], "uplink eth9 is not a port of bridge br");
+    }
+
+    /// Finding 107fe0bf559c: naming a pod's port must not tag it.
+    #[test]
+    fn a_named_uplink_that_is_a_pods_port_is_rejected() {
+        let ps = ports();
+        let (pod_port, _) = ps.iter().find(|(_, p)| !p.uplink).expect("fixture has a pod port");
+        let mut x = w(10);
+        x.uplink = Some(pod_port.clone());
+        let a = actions(&[x.clone()], &ps, &owned(&[]), "br");
+        assert!(a.add.is_empty(), "a pod's port was tagged: {:?}", a.add);
+        assert_eq!(a.problems[&10], format!("uplink {pod_port} on bridge br is not a NIC or bond"));
+        assert!(present(&[x], &ps, "br").is_empty(), "reported present on a pod's port");
     }
 
     #[test]
