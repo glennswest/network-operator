@@ -284,12 +284,14 @@ until `deploy/crds/` matches).
       the VLAN's pendingNodes). Test `a_named_uplink_that_is_a_pods_port_is_rejected`.
       ddb4477; README + CHANGELOG. CRD text unchanged (already says NIC/bond).
       sc-build rc=0 at c36d8ee: 198 unit + 3+6+3, clippy clean (at ddb4477).
-- [ ] #50 (2026-11-21, P1 review, src/vlan/mod.rs) three findings:
+- [x] #50 (2026-11-21, P1 review, src/vlan/mod.rs) three findings:
       `6719493814e7` delete/overwrite a NAD only if `is_ours` (managed-by +
       name == vlan label); `9eb5fa65fc34` missing allowed namespaces ->
       waiting; `e7e9492310d5` a node with no readable agent report is
       pending (agent DS runs on every node; no opt-out). One test each;
-      README/CHANGELOG; CRD text (pendingNodes, Ready) regenerated.
+      README/CHANGELOG; CRD text (pendingNodes) regenerated under sc-build.
+      dab468a (fix) + 367b883 (CRD); sc-build rc=0 at 367b883: 201 unit +
+      3+6+3, test/ 36, clippy both. Not run on a cluster (#30/#16).
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
