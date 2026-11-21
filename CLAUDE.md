@@ -254,10 +254,12 @@ until `deploy/crds/` matches).
       `health::not_the_cluster_network` (Degraded, reason
       `NotTheClusterNetwork`), written only when changed, and
       `await_change`. No admission check (CEL/webhook not used; #24).
-- [ ] #47 (2026-11-20, P1 review finding 32389d356451) ConfigMap keys the
+- [x] #47 (2026-11-20, P1 review finding 32389d356451) ConfigMap keys the
       render drops survived rustkube's merge apply. Fix: `apply_one` follows a
       ConfigMap apply with `enforce_exact_data` (GET, pure `exact_data` diff of
       data/binaryData, PUT with the read resourceVersion, 5 tries on 409).
+      ee7ea4e; sc-build rc=0 there 2026-11-21 (191 unit + 3+6+3, clippy
+      clean). Not run on a cluster (no test machine runs the operator, #30).
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
