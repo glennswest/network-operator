@@ -81,7 +81,14 @@ fn deployment(cfg: &EffectiveConfig) -> Deployment {
                 ..Default::default()
             },
             template: PodTemplateSpec {
-                metadata: Some(ObjectMeta { labels: Some(pod_labels), ..Default::default() }),
+                metadata: Some(ObjectMeta {
+                    labels: Some(pod_labels),
+                    // The relay reads its config file at start only (#48).
+                    annotations: Some(config_hash_annotations(
+                        config(cfg).data.as_ref().expect("relay config has data"),
+                    )),
+                    ..Default::default()
+                }),
                 spec: Some(PodSpec {
                     host_network: Some(true),
                     tolerations: Some(tolerations()),

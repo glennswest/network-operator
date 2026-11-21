@@ -58,12 +58,26 @@ pub struct Rollout {
     pub ready: i32,
     /// Replicas already running the current pod template.
     pub updated: i32,
+    /// The status is for an older spec than the stored one (#48): its
+    /// controller has not seen the newest template yet, so `updated` still
+    /// counts the old one.
+    pub stale: bool,
 }
 
 impl Rollout {
     fn settled(&self) -> bool {
-        self.desired > 0 && self.ready >= self.desired && self.updated >= self.desired
+        !self.stale
+            && self.desired > 0
+            && self.ready >= self.desired
+            && self.updated >= self.desired
     }
+}
+
+/// Whether a workload's status lags its spec. Only a reported
+/// `observedGeneration` behind `metadata.generation` counts; a control plane
+/// that reports neither is taken at its counts, or it could never settle.
+fn status_is_stale(generation: Option<i64>, observed: Option<i64>) -> bool {
+    matches!((generation, observed), (Some(g), Some(o)) if o < g)
 }
 
 /// Read the current state of the install. `envoy_wanted` is whether the
@@ -87,11 +101,13 @@ pub async fn observe(
 
     let operator = optional(deploys.get(OPERATOR_DEPLOY).await)?.map(|d| {
         let desired = d.spec.as_ref().and_then(|s| s.replicas).unwrap_or(1);
+        let generation = d.metadata.generation;
         let s = d.status.unwrap_or_default();
         Rollout {
             desired,
             ready: s.ready_replicas.unwrap_or(0),
             updated: s.updated_replicas.unwrap_or(0),
+            stale: status_is_stale(generation, s.observed_generation),
         }
     });
 
@@ -151,11 +167,13 @@ pub async fn observe(
 }
 
 fn daemonset_rollout(d: DaemonSet) -> Rollout {
+    let generation = d.metadata.generation;
     let s = d.status.unwrap_or_default();
     Rollout {
         desired: s.desired_number_scheduled,
         ready: s.number_ready,
         updated: s.updated_number_scheduled.unwrap_or(0),
+        stale: status_is_stale(generation, s.observed_generation),
     }
 }
 
@@ -418,6 +436,9 @@ fn evaluate(snap: &Snapshot) -> (Draft, Draft, Draft) {
                 envoy.ready, envoy.desired, envoy.updated
             );
         }
+        if agent.stale || operator.stale || envoy.stale {
+            message += "; new spec not yet observed";
+        }
         Draft {
             type_: PROGRESSING,
             status: true,
@@ -500,7 +521,7 @@ mod tests {
     }
 
     fn rollout(desired: i32, ready: i32) -> Option<Rollout> {
-        Some(Rollout { desired, ready, updated: ready })
+        Some(Rollout { desired, ready, updated: ready, stale: false })
     }
 
     fn nodes(names: &[&str]) -> Vec<String> {
@@ -577,13 +598,48 @@ mod tests {
     fn an_upgrade_still_carrying_old_pods_is_progressing_while_available() {
         // Every agent is ready, but some are still on the previous image.
         let snap = Snapshot {
-            agent: Some(Rollout { desired: 3, ready: 3, updated: 1 }),
+            agent: Some(Rollout { desired: 3, ready: 3, updated: 1, stale: false }),
             ..healthy()
         };
         let c = eval(&snap);
         assert_eq!(status_of(&c, AVAILABLE), "True");
         assert_eq!(status_of(&c, PROGRESSING), "True");
         assert_eq!(find(&c, PROGRESSING).unwrap().reason, "RolloutInProgress");
+    }
+
+    /// Just after a template change (#48) the stored status can still be the
+    /// old generation's, every replica "updated". That is a rollout not yet
+    /// started, not a finished one.
+    #[test]
+    fn a_status_for_an_older_generation_is_still_progressing() {
+        for stale_agent in [true, false] {
+            let mut snap = healthy();
+            let r = Rollout { desired: 3, ready: 3, updated: 3, stale: true };
+            if stale_agent {
+                snap.agent = Some(r);
+            } else {
+                snap.operator = Some(Rollout { desired: 1, ready: 1, updated: 1, stale: true });
+            }
+            let c = eval(&snap);
+            assert_eq!(status_of(&c, PROGRESSING), "True", "agent stale: {stale_agent}");
+            assert_eq!(find(&c, PROGRESSING).unwrap().reason, "RolloutInProgress");
+        }
+        // The same counts, observed at the current generation, are settled.
+        let snap = Snapshot {
+            agent: Some(Rollout { desired: 3, ready: 3, updated: 3, stale: false }),
+            ..healthy()
+        };
+        assert_eq!(status_of(&eval(&snap), PROGRESSING), "False");
+    }
+
+    #[test]
+    fn only_a_reported_older_generation_is_stale() {
+        assert!(status_is_stale(Some(4), Some(3)));
+        assert!(!status_is_stale(Some(4), Some(4)));
+        // rustkube may report neither; taking that as stale would never settle.
+        assert!(!status_is_stale(Some(4), None));
+        assert!(!status_is_stale(None, None));
+        assert!(!status_is_stale(None, Some(3)));
     }
 
     #[test]

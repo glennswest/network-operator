@@ -287,7 +287,7 @@ workloads that are actually running.
 | Condition | Rule |
 |---|---|
 | `Available=True` | all of: `DaemonSet/cilium` has ≥ 1 desired pod and all are ready; `cilium-operator` has ≥ 1 ready replica; with Envoy enabled, `DaemonSet/cilium-envoy` exists, has ≥ 1 desired pod and all are ready; every `cilium.io` CRD is `Established=True`; and every node with a ready agent pod has a `CiliumNode`. Otherwise False with the first failing reason, in that order: `Installing`, `NoSchedulableNodes`, `AgentNotReady`, `OperatorNotReady`, `EnvoyNotReady`, `CiliumCRDsNotEstablished`, `CiliumNodesMissing`. |
-| `Progressing=True` | workloads (Envoy included, when enabled) not created yet (`Installing`), Cilium CRs deferred or a `cilium.io` CRD not yet Established (`WaitingForCiliumCRDs`), or a workload not fully ready *and* updated (`RolloutInProgress`). |
+| `Progressing=True` | workloads (Envoy included, when enabled) not created yet (`Installing`), Cilium CRs deferred or a `cilium.io` CRD not yet Established (`WaitingForCiliumCRDs`), or a workload not fully ready *and* updated, or whose status still reports an older `observedGeneration` than its spec (`RolloutInProgress`; #48). |
 | `Degraded=True` | this pass failed (`ReconcileFailed`, with the error), or a pod labelled `k8s-app=cilium` (or `k8s-app=cilium-envoy`, with Envoy enabled) is in `CrashLoopBackOff` with ≥ 3 restarts (`PodsCrashLooping`). |
 
 `CiliumNode` is checked by name against the nodes running a ready agent, so
@@ -318,6 +318,14 @@ now closed, and the fallbacks stay for older apiservers:
   (current `resourceVersion`, up to 5 tries on a 409). Without it a key the
   render drops — `mtu` back to auto, `proxy-prometheus-port` once standalone
   Envoy takes 9964 — would survive the merge and stay in force.
+- Cilium reads its ConfigMap at start only, so a config change is rolled out
+  by the pod template (#48): the `cilium` DaemonSet and `cilium-operator`
+  Deployment carry `network.storm.io/config-hash`, a digest of
+  `cilium-config`'s rendered `data` (FNV-1a 64, length-prefixed keys and
+  values in key order), and `hubble-relay` the same of its own config. A
+  ConfigMap-only edit (`mtu`, encryption, routing, `k8sServiceHost`, …)
+  therefore restarts the agents two nodes at a time and recreates the
+  operator. It is an annotation, never a label: selectors stay fixed.
 
 ## The VLAN layer (`VLAN` CR, #32)
 

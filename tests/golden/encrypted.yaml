@@ -631,6 +631,8 @@ spec:
       k8s-app: cilium
   template:
     metadata:
+      annotations:
+        network.storm.io/config-hash: 787bce0e7a192e26
       labels:
         app.kubernetes.io/managed-by: network-operator
         app.kubernetes.io/part-of: cilium
@@ -1019,6 +1021,8 @@ spec:
     type: Recreate
   template:
     metadata:
+      annotations:
+        network.storm.io/config-hash: 787bce0e7a192e26
       labels:
         app.kubernetes.io/managed-by: network-operator
         app.kubernetes.io/part-of: cilium
@@ -1143,6 +1147,8 @@ spec:
       k8s-app: hubble-relay
   template:
     metadata:
+      annotations:
+        network.storm.io/config-hash: 4e710a06d473e831
       labels:
         app.kubernetes.io/managed-by: network-operator
         app.kubernetes.io/part-of: cilium

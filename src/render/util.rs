@@ -218,3 +218,67 @@ pub fn health_probe(port: i32, path: &str) -> Probe {
 pub fn tolerate_all() -> Vec<Toleration> {
     vec![Toleration { operator: Some("Exists".to_string()), ..Default::default() }]
 }
+
+/// Pod-template annotation carrying [`config_hash`] of the ConfigMap the pods
+/// read their configuration from (#48, finding `4337dd4c99d7`). Cilium reads
+/// that ConfigMap at start only, so a ConfigMap-only change must change the
+/// template, or the running pods keep their startup configuration. An
+/// annotation, never a label: selectors stay independent of the spec.
+pub const CONFIG_HASH_ANNOTATION: &str = "network.storm.io/config-hash";
+
+/// A deterministic digest of a ConfigMap's `data`: FNV-1a 64 over each
+/// key and value, each prefixed by its length (u64, little-endian), in key
+/// order, as 16 hex digits. Not a security boundary, only a change detector;
+/// written out (not `DefaultHasher`) so it is the same on every toolchain and
+/// the goldens stay stable.
+pub fn config_hash(data: &std::collections::BTreeMap<String, String>) -> String {
+    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+    let mut h = OFFSET;
+    let mut eat = |bytes: &[u8]| {
+        for b in (bytes.len() as u64).to_le_bytes().iter().chain(bytes) {
+            h ^= u64::from(*b);
+            h = h.wrapping_mul(PRIME);
+        }
+    };
+    for (k, v) in data {
+        eat(k.as_bytes());
+        eat(v.as_bytes());
+    }
+    format!("{h:016x}")
+}
+
+/// The annotations for a pod template whose pods read `data` at start.
+pub fn config_hash_annotations(
+    data: &std::collections::BTreeMap<String, String>,
+) -> std::collections::BTreeMap<String, String> {
+    std::collections::BTreeMap::from([(CONFIG_HASH_ANNOTATION.to_string(), config_hash(data))])
+}
+
+#[cfg(test)]
+mod hash_tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    fn m(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    }
+
+    /// Pinned values: the hash is part of every golden, so it must not move
+    /// with the toolchain. FNV-1a 64 of the empty input is its offset basis.
+    #[test]
+    fn hash_is_pinned() {
+        assert_eq!(config_hash(&BTreeMap::new()), "cbf29ce484222325");
+        assert_eq!(config_hash(&m(&[("mtu", "1450")])), "821c422a87553c8a");
+    }
+
+    #[test]
+    fn any_key_or_value_change_moves_the_hash() {
+        let base = config_hash(&m(&[("mtu", "1450"), ("debug", "false")]));
+        assert_ne!(base, config_hash(&m(&[("mtu", "1500"), ("debug", "false")])));
+        assert_ne!(base, config_hash(&m(&[("mtu", "1450")])));
+        assert_ne!(base, config_hash(&m(&[("mtu", "1450"), ("debug", "false"), ("x", "")])));
+        // Length prefixes: moving a boundary between key and value is a change.
+        assert_ne!(config_hash(&m(&[("ab", "c")])), config_hash(&m(&[("a", "bc")])));
+    }
+}

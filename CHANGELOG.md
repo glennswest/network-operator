@@ -3,6 +3,10 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-21 (#48)
+- **fix:** a ConfigMap-only edit now rolls out Cilium (#48, finding `4337dd4c99d7`). Changing `mtu`, encryption, host routing or `k8sServiceHost` used to update `cilium-config` and leave the agent DaemonSet and `cilium-operator` Deployment templates unchanged, so the running pods kept their startup configuration while the `Network` reported the new generation applied. Both templates now carry the annotation `network.storm.io/config-hash` (a deterministic FNV-1a 64 digest of the rendered `cilium-config` data), and `hubble-relay` carries one of `hubble-relay-config`. Every golden gains the annotation; nothing else in them changes.
+- **fix:** `Progressing` stays `RolloutInProgress` while a workload's status reports an older `observedGeneration` than its spec (#48). Before this, the status left from the previous template, with every replica counted as updated, could read as settled right after an apply. If no `observedGeneration` is reported, the counts are taken as they are.
+
 ### 2026-11-21
 - **build:** the first golden exists (#27): `registry/network-operator:f22c3c982493`, v0.4.0 at 8e18866. `stormcentral component fetch network-operator` returns `network-operator` (12933648 bytes, sha256 `d2b7aecd…62a7`, checked), a static-pie x86-64 binary that reports `network-operator 0.4.0`.
 - **docs:** README "How it ships" and the deck: stormcos now carries the golden (stormcos#1475, 82cb0f9: `deploy/image.toml` member, `[[slab.golden]]`, pallet path), `start = false`, VLAN option only; it still never runs the Cilium half. The deck's "Golden: none" line was stale since #18.

@@ -342,6 +342,61 @@ mod tests {
             .all(|r| rendered_on.contains(&r.id())));
     }
 
+    /// A ConfigMap-only edit must roll the pods that read it (#48, finding
+    /// `4337dd4c99d7`): Cilium reads cilium-config at start, so the template
+    /// has to change. It changes by the config-hash annotation alone, and the
+    /// selectors (immutable server-side) do not move.
+    #[test]
+    fn config_map_only_edit_changes_the_agent_and_operator_templates() {
+        let base = cfg_for(Mode::Overlay);
+        let mut edited = base.clone();
+        edited.mtu = 1450;
+        assert_ne!(base.mtu, edited.mtu);
+
+        let find = |cfg: &EffectiveConfig, id: &str| -> serde_json::Value {
+            let r = render(cfg).into_iter().find(|r| r.id() == id).unwrap();
+            serde_json::to_value(&r.obj).unwrap()
+        };
+        let cm = |cfg: &EffectiveConfig| {
+            let v = find(cfg, "ConfigMap/kube-system/cilium-config");
+            serde_json::from_value::<BTreeMap<String, String>>(v["data"].clone()).unwrap()
+        };
+        assert_ne!(cm(&base), cm(&edited), "the edit must reach cilium-config");
+
+        for id in ["DaemonSet/kube-system/cilium", "Deployment/kube-system/cilium-operator"] {
+            let (a, b) = (find(&base, id), find(&edited, id));
+            let hash = |v: &serde_json::Value| {
+                v["spec"]["template"]["metadata"]["annotations"][util::CONFIG_HASH_ANNOTATION]
+                    .as_str()
+                    .unwrap()
+                    .to_string()
+            };
+            assert_eq!(hash(&a), util::config_hash(&cm(&base)), "{id}: hash of the rendered data");
+            assert_eq!(hash(&b), util::config_hash(&cm(&edited)), "{id}: hash of the rendered data");
+            assert_ne!(a["spec"]["template"], b["spec"]["template"], "{id} would not roll out");
+            assert_eq!(a["spec"]["template"]["spec"], b["spec"]["template"]["spec"], "{id}: only the annotation moves");
+            assert_eq!(a["spec"]["selector"], b["spec"]["selector"], "{id}: selector moved");
+        }
+    }
+
+    /// Same for the relay and its own ConfigMap.
+    #[test]
+    fn relay_template_carries_its_config_hash() {
+        let cfg = cfg_for(Mode::Overlay);
+        let objs = render(&cfg);
+        let get = |id: &str| {
+            serde_json::to_value(&objs.iter().find(|r| r.id() == id).unwrap().obj).unwrap()
+        };
+        let data: BTreeMap<String, String> =
+            serde_json::from_value(get("ConfigMap/kube-system/hubble-relay-config")["data"].clone())
+                .unwrap();
+        let dep = get("Deployment/kube-system/hubble-relay");
+        assert_eq!(
+            dep["spec"]["template"]["metadata"]["annotations"][util::CONFIG_HASH_ANNOTATION],
+            serde_json::Value::String(util::config_hash(&data))
+        );
+    }
+
     #[test]
     fn bare_metal_renders_l2_not_bgp() {
         let cfg = cfg_for(Mode::BareMetal);

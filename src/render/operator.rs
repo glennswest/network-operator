@@ -55,6 +55,8 @@ pub fn render(cfg: &EffectiveConfig) -> Rendered {
             template: PodTemplateSpec {
                 metadata: Some(ObjectMeta {
                     labels: Some(pod_labels),
+                    // Mounts cilium-config, read at start only (#48).
+                    annotations: Some(config_hash_annotations(&super::config::data(cfg))),
                     ..Default::default()
                 }),
                 spec: Some(pod_spec(cfg)),
