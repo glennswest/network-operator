@@ -277,6 +277,12 @@ until `deploy/crds/` matches).
       only, and must). sc-build rc=0 at 7cc619d: 197 unit + 3+6+3, test/ 36,
       clippy both (auto-filed #53 from 1a00f9b closed by it). Not run on a
       cluster (no test machine runs the operator, #30).
+- [ ] #49 (2026-11-21, P1 review finding 107fe0bf559c, security) a VLAN's
+      named `uplink` could be a pod's veth/tap and the agent tagged it. Fix:
+      `agent::targets` accepts a named port only if `uplink` (NIC/bond),
+      else a problem `uplink X on bridge B is not a NIC or bond` (shows in
+      the VLAN's pendingNodes). Test `a_named_uplink_that_is_a_pods_port_is_rejected`.
+      ddb4477; README + CHANGELOG. CRD text unchanged (already says NIC/bond).
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
