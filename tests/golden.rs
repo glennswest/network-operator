@@ -254,8 +254,10 @@ fn runtime_changeable_fields_do_not_move_object_identities() {
 }
 
 /// IPsec (#44) is overlay plus the keyfile: the same objects, and only
-/// cilium-config and the agent DaemonSet differ. The keyfile Secret itself is
-/// not rendered (its key is random) — src/ipsec.rs creates it.
+/// cilium-config and the agent DaemonSet differ — bar the config-hash
+/// annotation on cilium-operator's template, which follows cilium-config
+/// (#48). The keyfile Secret itself is not rendered (its key is random) —
+/// src/ipsec.rs creates it.
 #[test]
 fn ipsec_only_touches_the_config_and_the_agent() {
     let render_of = |name: &str| {
@@ -266,15 +268,32 @@ fn ipsec_only_touches_the_config_and_the_agent() {
     let ids = |objs: &[render::Rendered]| objs.iter().map(|r| r.id()).collect::<Vec<_>>();
     assert_eq!(ids(&plain), ids(&ipsec));
 
+    // Each object without its template's config hash (#48), which moves with
+    // cilium-config by design.
+    let unhashed = |r: &render::Rendered| {
+        let mut v = serde_json::to_value(&r.obj).unwrap();
+        if let Some(a) = v
+            .pointer_mut("/spec/template/metadata/annotations")
+            .and_then(|a| a.as_object_mut())
+        {
+            a.remove("network.storm.io/config-hash");
+        }
+        v
+    };
     let mut changed = Vec::new();
+    let mut rehashed = Vec::new();
     for (a, b) in plain.iter().zip(&ipsec) {
-        if serde_yaml::to_string(&a.obj).unwrap() != serde_yaml::to_string(&b.obj).unwrap() {
+        if unhashed(a) != unhashed(b) {
             changed.push(a.id());
+        } else if serde_json::to_value(&a.obj).unwrap() != serde_json::to_value(&b.obj).unwrap() {
+            rehashed.push(a.id());
         }
     }
     assert_eq!(
         changed,
         ["ConfigMap/kube-system/cilium-config", "DaemonSet/kube-system/cilium"]
     );
+    // The operator reads cilium-config too, so ipsec must roll it.
+    assert_eq!(rehashed, ["Deployment/kube-system/cilium-operator"]);
     assert!(!ids(&ipsec).iter().any(|id| id.starts_with("Secret/")));
 }
