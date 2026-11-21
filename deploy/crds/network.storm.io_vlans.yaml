@@ -160,7 +160,7 @@ spec:
                 nullable: true
                 type: integer
               pendingNodes:
-                description: Nodes with an agent that does not (yet) have it, with the reason.
+                description: 'Nodes that do not (yet) have it, with the reason: their agent has not placed it, or the node has no readable agent report.'
                 items:
                   type: string
                 type: array
