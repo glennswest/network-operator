@@ -29,7 +29,7 @@ use tracing::{info, warn};
 
 use super::crd::{Vlan, VlanSpec};
 use super::{
-    attached_nads, nad, nad_api, plan, status, ExistingNad, NodeState, World, DEFAULT_NETWORKS_ANNOTATION,
+    attached_nads, nad, nad_api, plan, record_default_write, status, ExistingNad, NodeState, World, DEFAULT_NETWORKS_ANNOTATION,
     NETWORK_STATUS_ANNOTATION, NODE_STATE_ANNOTATION,
 };
 use crate::metrics::{FailureReason, Metrics};
@@ -174,10 +174,21 @@ async fn pass(client: &Client) -> Result<(), kube::Error> {
     for (ns, value) in &plan.annotate {
         let v = value.as_ref().map(|s| Value::String(s.clone())).unwrap_or(Value::Null);
         let patch = json!({"metadata": {"annotations": {DEFAULT_NETWORKS_ANNOTATION: v}}});
-        match ns_api.patch(ns, &PatchParams::default(), &Patch::Merge(&patch)).await {
-            Ok(_) => info!(namespace = %ns, default = ?value, "namespace default VLAN set"),
-            Err(e) => warn!(namespace = %ns, error = %e, "setting the namespace default failed"),
-        }
+        let previous = world.namespaces.get(ns).cloned().flatten();
+        let result = ns_api.patch(ns, &PatchParams::default(), &Patch::Merge(&patch)).await;
+        // Ready rests on what the namespace carries after the write, not on
+        // the write having been sent (finding 9a9978e141ed).
+        let observed = match &result {
+            Ok(n) => {
+                info!(namespace = %ns, default = ?value, "namespace default VLAN set");
+                Ok(n.annotations().get(DEFAULT_NETWORKS_ANNOTATION).map(String::as_str))
+            }
+            Err(e) => {
+                warn!(namespace = %ns, error = %e, "setting the namespace default failed");
+                Err(e.to_string())
+            }
+        };
+        record_default_write(&mut plan.reports, ns, value.as_deref(), previous.as_deref(), observed);
     }
 
     let now = Time(chrono::Utc::now());

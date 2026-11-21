@@ -372,7 +372,10 @@ NAD per namespace plus one bridge VLAN entry per uplink port.
   is untagged on the VLAN and *not* a member of VLAN 1 (the node's own LAN).
   It writes `network.storm.io/default-networks: <vlan>` on each `defaultFor`
   namespace, removes NADs and namespace defaults no VLAN wants any more
-  (deletion needs no finalizer), and fills `VLAN.status`.
+  (deletion needs no finalizer), and fills `VLAN.status`. A default counts
+  only once the namespace, as the apiserver returns it after the write,
+  carries it: a failed or ignored write keeps the VLAN (and the VLAN the
+  namespace still names) `Ready=False` / `Waiting` until a later pass lands it.
 - **The node agent** (`network-operator node-agent`, DaemonSet,
   `src/vlan/agent.rs`) on every node: host network, `NET_ADMIN`, raw
   rtnetlink (`src/vlan/netlink.rs`; the image has no iproute2). For the one

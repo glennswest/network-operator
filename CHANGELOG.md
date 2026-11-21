@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-21 (#51)
+- **fix:** a namespace default that did not land no longer reads as Ready (#51, finding `9a9978e141ed`). The VLAN controller logged a failed `network.storm.io/default-networks` patch and still marked the `defaultFor` VLAN Ready. Now the result is checked against the annotation the apiserver returns: on an error, or if the namespace does not carry the wanted value, the VLAN it should name (and the one it still names, if that exists) gets a `Waiting` reason and stays `Ready=False` until a later pass writes it.
+
 ### 2026-11-21 (#50)
 - **fix:** the VLAN controller deletes or overwrites only NADs it renders (#50, finding `6719493814e7`): managed-by `network-operator` *and* named for the VLAN its `network.storm.io/vlan` label names. A renamed copy of an operator NAD, or any NAD carrying the VLAN label without both markers, used to be deleted on the next pass.
 - **fix:** a VLAN with an allowed namespace that does not exist is `Ready=False` / `Waiting` (`namespace(s) X do not exist yet`) until it does (#50, finding `9eb5fa65fc34`); it used to read Ready with no NAD there.

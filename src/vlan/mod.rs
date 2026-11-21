@@ -448,6 +448,41 @@ pub fn plan(world: &World) -> Plan {
     plan
 }
 
+/// Record how a planned namespace-default write went (finding
+/// `9a9978e141ed`). `want` is what the plan wrote (`None`: remove), `previous`
+/// what the namespace carried before, `observed` the annotation the apiserver
+/// returned after the patch, or the error. Unless the namespace now carries
+/// `want`, the VLAN it should name (and the one it still names, if that VLAN
+/// exists) is not Ready: a pod naming no network there would not get the
+/// requested default. Waiting, not a problem: the next pass writes it again.
+pub fn record_default_write(
+    reports: &mut BTreeMap<String, Report>,
+    namespace: &str,
+    want: Option<&str>,
+    previous: Option<&str>,
+    observed: Result<Option<&str>, String>,
+) {
+    let why = match observed {
+        Ok(got) if got == want => return,
+        Ok(got) => format!(
+            "namespace {namespace}'s default reads {} after the write, not {}",
+            got.unwrap_or("(none)"),
+            want.unwrap_or("(none)")
+        ),
+        Err(e) => match want {
+            Some(w) => format!("setting namespace {namespace}'s default to {w}: {e}"),
+            None => format!("removing namespace {namespace}'s default: {e}"),
+        },
+    };
+    let mut vlans: Vec<&str> = want.into_iter().collect();
+    vlans.extend(previous.filter(|p| Some(*p) != want));
+    for v in vlans {
+        if let Some(r) = reports.get_mut(v) {
+            r.waiting.push(why.clone());
+        }
+    }
+}
+
 /// The NADs a pod's network-status annotation says it is attached to, as
 /// `namespace/name` (an unqualified name is in the pod's namespace).
 pub fn attached_nads(pod_namespace: &str, network_status: &str) -> Vec<String> {

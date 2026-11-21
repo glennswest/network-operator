@@ -357,3 +357,51 @@ fn a_hundred_vlans_plan_a_hundred_nads() {
     assert_eq!(p.apply.len(), 100);
     assert!(p.reports.values().all(|r| r.problems.is_empty()));
 }
+
+// Finding 9a9978e141ed: a namespace default that did not land keeps the VLAN
+// it should name (and the one it still names) waiting, not Ready.
+#[test]
+fn a_failed_namespace_default_write_keeps_the_vlan_waiting() {
+    let mut a = vlan("a10", 10, &[]);
+    a.spec.default_for = vec!["web".into()];
+    let mut w = world(vec![a, vlan("old", 20, &[])], &["web"]);
+    w.namespaces.insert("web".into(), Some("old".into()));
+    let carries = Some(NodeState {
+        bridge: DEFAULT_BRIDGE.into(),
+        vlan_filtering: true,
+        present: vec![10, 20],
+        ..Default::default()
+    });
+    w.nodes.insert("n1".into(), carries);
+    let p = plan(&w);
+    assert_eq!(p.annotate, vec![("web".to_string(), Some("a10".to_string()))]);
+    let now = Time(chrono::DateTime::from_timestamp(1000, 0).unwrap());
+
+    // The patch failed.
+    let mut reports = p.reports.clone();
+    record_default_write(&mut reports, "web", Some("a10"), Some("old"), Err("409 conflict".into()));
+    let msg = "setting namespace web's default to a10: 409 conflict";
+    assert_eq!(reports["a10"].waiting, vec![msg]);
+    assert_eq!(reports["old"].waiting, vec![msg], "the VLAN it still names is not settled either");
+    let s = status(&VlanStatus::default(), &reports["a10"], 1, &now);
+    assert_eq!((s.conditions[0].status.as_str(), s.conditions[0].reason.as_str()), ("False", "Waiting"));
+    assert_eq!(s.conditions[1].status, "False", "a retryable write is not degraded");
+
+    // The patch "succeeded" but the namespace still reads the old value.
+    let mut reports = p.reports.clone();
+    record_default_write(&mut reports, "web", Some("a10"), Some("old"), Ok(Some("old")));
+    assert_eq!(reports["a10"].waiting, vec!["namespace web's default reads old after the write, not a10"]);
+
+    // A removal that failed: the VLAN still named (if it exists) waits.
+    let mut reports = p.reports.clone();
+    record_default_write(&mut reports, "web", None, Some("old"), Err("timeout".into()));
+    assert_eq!(reports["old"].waiting, vec!["removing namespace web's default: timeout"]);
+    assert!(reports["a10"].waiting.is_empty());
+    record_default_write(&mut reports, "web", None, Some("deleted-vlan"), Err("timeout".into()));
+
+    // It landed: nothing added, and the VLAN is Ready.
+    let mut reports = p.reports.clone();
+    record_default_write(&mut reports, "web", Some("a10"), Some("old"), Ok(Some("a10")));
+    assert_eq!(reports, p.reports);
+    assert_eq!(status(&VlanStatus::default(), &reports["a10"], 1, &now).conditions[0].status, "True");
+}
