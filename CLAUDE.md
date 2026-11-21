@@ -194,6 +194,12 @@ until `deploy/crds/` matches).
       component (#27, master noted). Live `vlan` suite waits on #27,
       stormcentral#1333 (runner grants), rustkube-node#346 (ns default),
       #347 (isolation); dhcp on stormcos#913. Deck overflow pre-existing: #40.
+      2026-11-21: #27 closed (image f22c3c982493) and stormcos#495 closed
+      (cni-bin plugins). Still open, untouched since 11-13/19:
+      stormcentral#1333 (grants), rustkube-node#346/#347/#351 (podIP, which
+      the isolation probe needs), stormcos-options#23 (how deploy/vlan.yaml
+      reaches a test machine), stormcos#913 (dhcp only). No code change;
+      closes on a passing `vlan` run.
 - [x] #27 golden (decided #18). Shape, from stormcos's optional-operator
       precedent (stormcos docs/OPTIONS.md; nfsop, stormblock-operator):
       registry kind `service`, `start = false` (carried, never booted; #30),
