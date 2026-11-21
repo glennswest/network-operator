@@ -56,9 +56,9 @@ The stack's analog of OpenShift's **CNO**. *Not* `cilium-operator` — it
 
 - Depends on (`stormcentral check`): **rustkube**, **stormcos-cilium**.
 - Runs on nodes via **rustkube-node** (kubelet; agent `startupProbe`).
-- **Not shipped by stormcos**: the image has no network-operator member and
-  nothing preloads it; the old `editions/kubernetes.toml` entry is the
-  pre-pivot plan. stormcos ships the same Cilium objects (`DaemonSet/cilium`,
+- **Carried by stormcos for VLANs only**: the golden is a `start = false`
+  image member (stormcos#1475); only `run --controllers vlan` + the node
+  agent run from it, via the VLAN option. The Cilium half is never run. stormcos ships the same Cilium objects (`DaemonSet/cilium`,
   `cilium-operator`, `cilium-config`) as static manifests — so deploying the
   operator on a stormcos node would fight them. Do not: it is standalone
   by decision (#30), for other rustkube clusters.
@@ -195,12 +195,11 @@ default. One VLAN-aware bridge per uplink: a VLAN is NADs plus bridge entries.
 
 - **Image**: static musl binary on `scratch`, built `--locked`. Distributed as
   a **gzipped OCI archive on each GitHub release** → `podman load` →
-  `localhost/network-operator:<version>`; must be preloaded (never pulled) —
-  nothing preloads it today.
+  `localhost/network-operator:<version>`; must be preloaded (never pulled).
 - **Packages**: `.rpm` / `.deb` with the binary, `crdgen`, CRD, manifests,
   examples.
-- **Golden**: **none** (whether it should get one: decision #18) — not in
-  stormcentral's golden builds, and not in the stormcos image.
+- **Golden**: a stormcentral `service` component, `start = false` (#27);
+  first image v0.4.0; stormcos carries it (VLAN option only).
 - **Starts** from `deploy/operator.yaml`: 1-replica `Recreate` Deployment in
   `kube-system`, **hostNetwork**, control-plane nodes, `system-cluster-critical`
   — so it runs on a node with no CNI and brings Cilium up underneath itself.

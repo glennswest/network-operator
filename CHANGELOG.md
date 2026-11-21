@@ -3,6 +3,10 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-21
+- **build:** the first golden exists (#27): `registry/network-operator:f22c3c982493`, v0.4.0 at 8e18866. `stormcentral component fetch network-operator` returns `network-operator` (12933648 bytes, sha256 `d2b7aecd…62a7`, checked), a static-pie x86-64 binary that reports `network-operator 0.4.0`.
+- **docs:** README "How it ships" and the deck: stormcos now carries the golden (stormcos#1475, 82cb0f9: `deploy/image.toml` member, `[[slab.golden]]`, pallet path), `start = false`, VLAN option only; it still never runs the Cilium half. The deck's "Golden: none" line was stale since #18.
+
 ### 2026-11-20
 - **fix:** a key the render drops from a ConfigMap is now removed from the stored one (#47, finding `32389d356451`). rustkube's apply is a plain merge, so setting `mtu` back to auto, or enabling standalone Envoy (which drops `proxy-prometheus-port`), left the old key in `cilium-config` and in force. After applying a ConfigMap, `apply.rs` reads it back and, if `data`/`binaryData` differ from the render, replaces it with exactly the rendered maps (keeping its metadata and `resourceVersion`, retrying a 409 up to 5 times). Unit tests in `apply.rs` cover both cases.
 - **fix:** only the `Network` named `cluster` is reconciled (#46, finding `067b10625fd1`). Every `Network` CR used to render, apply and own the same fixed `kube-system` Cilium objects, so a second one fought the first on every requeue and deleting either garbage-collected the shared install. Any other `Network` now gets `Degraded=True` / `Available=False` / `Progressing=False` with reason `NotTheClusterNetwork` and nothing else; its status is rewritten only when it changes.

@@ -547,7 +547,7 @@ stormcentral test run network-operator short --url http://stormcentral.g8.lo
 
   `localhost/` is local-only to CRI-O, so nothing ever tries to pull it; the
   image must be preloaded on every node that may run the operator (nothing
-  preloads it today — stormcos does not; see below). The
+  preloads the archive; on stormcos the golden below takes its place). The
   package build fails if `deploy/operator.yaml` and the archive disagree on
   the tag.
 - **`.rpm` / `.deb`** with the binary, `network-operator-crdgen`, the CRD,
@@ -582,13 +582,22 @@ stormcentral test run network-operator short --url http://stormcentral.g8.lo
   `network-operator`, for a stormoptions catalog entry to apply when the
   VLAN option is enabled. `tests/deploy.rs` fails the build if any workload
   in it would run anything but `run --controllers vlan` or `node-agent`.
-  The registry entry is the owner's setting: the master adds it
-  (`stormcentral component add`), and images are then built with
-  `stormcentral component build network-operator`.
-  **stormcos does not ship, preload or run the Cilium half of
-  network-operator.** Its image (`deploy/image.toml`) has no
-  network-operator member, and the crate that used to preload container
-  images (`stormcos-compose`) was deleted (stormcos#42). stormcos
+  The registry entry (the owner's setting, added by the master) is kind
+  `service`, `binaries = ["network-operator"]`, port 9446, health
+  `/healthz`, argv `run --controllers vlan`, `start = false`; images are
+  built with `stormcentral component build network-operator` and read back
+  with `stormcentral component fetch network-operator --out DIR` (sha256
+  checked). The first image, `registry/network-operator:f22c3c982493`, is
+  v0.4.0 built at 8e18866.
+  stormcos **carries** that golden (stormcos#1475, 82cb0f9): its
+  `deploy/image.toml` has a `network-operator` member (`kind = "raw"`), a
+  `[[slab.golden]]` from `pallet:system1/network-operator` and the
+  `network-operator:/p/network-operator` pallet path. Nothing starts it;
+  the VLAN option (stormcos-options#23) is what applies
+  `deploy/stormcos/vlan.yaml`.
+  **stormcos does not run the Cilium half of network-operator.** The
+  crate that used to preload container images (`stormcos-compose`) was
+  deleted (stormcos#42). stormcos
   `editions/kubernetes.toml` still lists network-operator, but that file is
   the pre-pivot plan, kept only for a CI lint, and says it is not what the
   image carries.

@@ -194,7 +194,7 @@ until `deploy/crds/` matches).
       component (#27, master noted). Live `vlan` suite waits on #27,
       stormcentral#1333 (runner grants), rustkube-node#346 (ns default),
       #347 (isolation); dhcp on stormcos#913. Deck overflow pre-existing: #40.
-- [ ] #27 golden (decided #18). Shape, from stormcos's optional-operator
+- [x] #27 golden (decided #18). Shape, from stormcos's optional-operator
       precedent (stormcos docs/OPTIONS.md; nfsop, stormblock-operator):
       registry kind `service`, `start = false` (carried, never booted; #30),
       binary at /usr/sbin/network-operator; `deploy/stormcos/vlan.yaml`
@@ -298,8 +298,9 @@ until `deploy/crds/` matches).
   decision #19, which picks where drift-heal runs) — P3. #9 also carries the envoy tag mismatch
   (1.36.9 here, a tag; stormcos-cilium runs Envoy in the agent, so pins
   none — #20).
-  stormcos does NOT ship or preload this operator (#21), and will not: #30
-  decided standalone (stormcos moves to flowsdn). Its
+  stormcos never runs this operator's Cilium half (#21, #30 standalone;
+  stormcos moves to flowsdn). Since 82cb0f9 (stormcos#1475) it carries the
+  golden, `start = false`, for the VLAN option only. Its
   `editions/kubernetes.toml` is the pre-pivot plan, not the image; the image
   runs Cilium from static manifests with the same kube-system object names
   we render, so the two must never run on one cluster.
@@ -329,7 +330,8 @@ modes plus the optional standalone Envoy; serves `/healthz`, `/readyz`,
 `/metrics` on :9446; and carries the VLAN layer (`VLAN` CR, `run
 --controllers vlan`, `node-agent`, #32). Standalone (#30): it does not
 replace stormcos's static Cilium manifests. Ships as a stormcentral golden
-carried with `start = false` (#27, waiting on the registry entry); the OCI
+carried with `start = false` (#27; first image f22c3c982493, carried by
+stormcos since 82cb0f9 for the VLAN option); the OCI
 archive on GitHub releases stops at v0.2.4. Docs refreshed from the code
 2026-11-14. The `test/` container's plumbing passes on pvetest1/2 (5 skips,
 #16); no operator run on a cluster yet. Open doc-vs-code gaps are issues:
