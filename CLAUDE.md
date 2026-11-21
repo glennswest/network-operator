@@ -213,6 +213,12 @@ until `deploy/crds/` matches).
       A release carries it only once stormcos's image.toml lists it
       (member + `carried`): filed stormcos#1475. Live use also needs
       stormcos-options#23.
+      2026-11-21 CLOSED: image registry/network-operator:f22c3c982493 (v0.4.0
+      at 8e18866); `component fetch` returned network-operator, sha256
+      d2b7aecd…62a7 checked, `--version` 0.4.0, dry-run renders. stormcos
+      82cb0f9 carries it (#1475 done). README/deck/CHANGELOG at d293007;
+      sc-build there: build, 191+3+6+3 tests, clippy pass; slide check fails
+      8/12 (pre-existing #40; auto-filed dup #52 closed).
 - [x] #43 (2026-11-18, P-1 no stubs): `ipsec` removed from the
       `EncryptionType` enum / CRD (was rejected at validation) -> gap #44;
       dual-stack comments in render/config.rs reworded -> gap #45. README,
