@@ -265,6 +265,8 @@ pub struct ExistingNad {
     pub name: String,
     /// Our [`VLAN_LABEL`], if it carries one.
     pub vlan: Option<String>,
+    /// It carries [`MANAGED_BY_LABEL`]`: `[`MANAGED_BY`].
+    pub managed: bool,
     pub config: Option<String>,
 }
 
@@ -274,8 +276,18 @@ impl ExistingNad {
             namespace: o.metadata.namespace.clone().unwrap_or_default(),
             name: o.metadata.name.clone().unwrap_or_default(),
             vlan: o.metadata.labels.as_ref().and_then(|l| l.get(VLAN_LABEL)).cloned(),
+            managed: o.metadata.labels.as_ref().and_then(|l| l.get(MANAGED_BY_LABEL)).map(String::as_str)
+                == Some(MANAGED_BY),
             config: o.data["spec"]["config"].as_str().map(str::to_string),
         }
+    }
+
+    /// Whether this is a NAD [`nad`] renders: managed by us, and named for
+    /// the VLAN its label names. Only such a NAD is ever updated or deleted
+    /// (finding `6719493814e7`): a copy renamed, or one someone else labels
+    /// with a VLAN, is left alone.
+    pub fn is_ours(&self) -> bool {
+        self.managed && self.vlan.as_deref() == Some(self.name.as_str())
     }
 }
 
@@ -364,7 +376,7 @@ pub fn plan(world: &World) -> Plan {
             }
             let key = (ns.clone(), a.name.clone());
             match existing.get(&key) {
-                Some(e) if e.vlan.as_deref() != Some(a.name.as_str()) => {
+                Some(e) if !e.is_ours() => {
                     report.problems.push(format!(
                         "NetworkAttachmentDefinition {ns}/{} exists and is not this VLAN's; not overwriting it",
                         a.name
@@ -379,16 +391,28 @@ pub fn plan(world: &World) -> Plan {
         }
     }
     for n in &world.nads {
-        if n.vlan.is_some() && !wanted.contains(&(n.namespace.clone(), n.name.clone())) {
+        if n.is_ours() && !wanted.contains(&(n.namespace.clone(), n.name.clone())) {
             plan.delete.push((n.namespace.clone(), n.name.clone()));
         }
     }
 
-    // Nodes and pods.
+    // Nodes and pods. The agent DaemonSet runs on every node (it tolerates
+    // every taint and selects none), so every node must report the VLAN
+    // before it is Ready: a node with no readable report is pending, not
+    // skipped (finding `e7e9492310d5`). There is no per-node opt-out.
     for a in &accepted {
         let report = plan.reports.entry(a.name.clone()).or_default();
+        if !report.missing_namespaces.is_empty() {
+            // Finding `9eb5fa65fc34`: a namespace it was asked for has no NAD.
+            report
+                .waiting
+                .push(format!("namespace(s) {} do not exist yet", report.missing_namespaces.join(", ")));
+        }
         for (node, state) in &world.nodes {
-            let Some(state) = state else { continue };
+            let Some(state) = state else {
+                report.pending_nodes.push(format!("{node}: no readable report from its node agent"));
+                continue;
+            };
             if state.bridge != a.bridge {
                 report.pending_nodes.push(format!("{node}: its agent manages bridge {}, not {}", state.bridge, a.bridge));
             } else if state.present.contains(&a.spec.id) {
@@ -441,7 +465,7 @@ pub fn attached_nads(pod_namespace: &str, network_status: &str) -> Vec<String> {
 pub fn status(previous: &VlanStatus, report: &Report, generation: i64, now: &Time) -> VlanStatus {
     let ready = report.problems.is_empty() && report.waiting.is_empty();
     let ready_cond = if ready {
-        cond(crd::conditions::READY, "True", "Ready", "NADs in place and every node with an agent carries the VLAN")
+        cond(crd::conditions::READY, "True", "Ready", "NADs in every allowed namespace and every node carries the VLAN")
     } else if !report.problems.is_empty() {
         cond(crd::conditions::READY, "False", "Rejected", &report.problems.join("; "))
     } else {

@@ -3,6 +3,11 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-21 (#50)
+- **fix:** the VLAN controller deletes or overwrites only NADs it renders (#50, finding `6719493814e7`): managed-by `network-operator` *and* named for the VLAN its `network.storm.io/vlan` label names. A renamed copy of an operator NAD, or any NAD carrying the VLAN label without both markers, used to be deleted on the next pass.
+- **fix:** a VLAN with an allowed namespace that does not exist is `Ready=False` / `Waiting` (`namespace(s) X do not exist yet`) until it does (#50, finding `9eb5fa65fc34`); it used to read Ready with no NAD there.
+- **fix:** a node with no readable agent report is listed in `pendingNodes` (`no readable report from its node agent`) and keeps the VLAN `Ready=False` (#50, finding `e7e9492310d5`). Such nodes used to be skipped, so one reporting node made the VLAN Ready. Policy: the agent DaemonSet runs on every node, so every node must report; there is no per-node opt-out.
+
 ### 2026-11-21 (#49)
 - **fix (security):** a VLAN's named `uplink` must be a NIC or a bond (#49, finding `107fe0bf559c`). The node agent used to accept any port of the bridge by name, so a `VLAN` naming a pod's veth or tap added that VLAN, tagged, to another workload's port and put the pod on it. Such a VLAN is now not placed; the agent reports `uplink <port> on bridge <bridge> is not a NIC or bond` in its node report, so the VLAN shows the node as pending. The automatic (unset) choice was already NICs and bonds only.
 

@@ -134,30 +134,67 @@ fn one_id_per_bridge_and_the_older_vlan_keeps_it() {
 fn a_deleted_or_rejected_vlans_nads_are_reaped_and_foreign_nads_are_left() {
     let mut w = world(vec![vlan("keep", 10, &["a"])], &["a", "b"]);
     w.nads = vec![
-        ExistingNad { namespace: "a".into(), name: "keep".into(), vlan: Some("keep".into()), config: Some(nad_config("keep", &vlan("keep", 10, &["a"]).spec)) },
+        ExistingNad { namespace: "a".into(), name: "keep".into(), vlan: Some("keep".into()), managed: true, config: Some(nad_config("keep", &vlan("keep", 10, &["a"]).spec)) },
         // The VLAN is gone.
-        ExistingNad { namespace: "a".into(), name: "gone".into(), vlan: Some("gone".into()), config: None },
+        ExistingNad { namespace: "a".into(), name: "gone".into(), vlan: Some("gone".into()), managed: true, config: None },
         // The namespace is no longer allowed.
-        ExistingNad { namespace: "b".into(), name: "keep".into(), vlan: Some("keep".into()), config: None },
+        ExistingNad { namespace: "b".into(), name: "keep".into(), vlan: Some("keep".into()), managed: true, config: None },
         // Someone else's.
-        ExistingNad { namespace: "b".into(), name: "theirs".into(), vlan: None, config: None },
+        ExistingNad { namespace: "b".into(), name: "theirs".into(), vlan: None, managed: false, config: None },
     ];
     let p = plan(&w);
     assert!(p.apply.is_empty(), "an up-to-date NAD is not re-applied");
     assert_eq!(p.delete, vec![("a".to_string(), "gone".to_string()), ("b".to_string(), "keep".to_string())]);
 }
 
+// Finding 6719493814e7: only a NAD the operator renders (managed-by us and
+// named for the VLAN its label names) is ever deleted or overwritten.
+#[test]
+fn a_nad_carrying_the_vlan_label_is_reaped_only_if_it_is_ours() {
+    let mut w = world(vec![vlan("v", 10, &["a"])], &["a"]);
+    let n = |name: &str, label: &str, managed: bool| ExistingNad {
+        namespace: "a".into(),
+        name: name.into(),
+        vlan: Some(label.into()),
+        managed,
+        config: None,
+    };
+    w.nads = vec![
+        // A copy of v's NAD, renamed: name and label disagree.
+        n("v-copy", "v", true),
+        // Labelled for a VLAN that is gone, but not managed by us.
+        n("gone", "gone", false),
+        // Ours, and its VLAN is gone.
+        n("old", "old", true),
+    ];
+    let p = plan(&w);
+    assert_eq!(p.delete, vec![("a".to_string(), "old".to_string())]);
+
+    // A same-named NAD with our VLAN label but no managed-by is not ours either.
+    w.nads = vec![n("v", "v", false)];
+    let p = plan(&w);
+    assert!(p.apply.is_empty() && p.delete.is_empty());
+    assert!(p.reports["v"].problems[0].contains("not overwriting"));
+
+    let api = nad_api();
+    let mut o = DynamicObject::new("v", &api).within("a");
+    o.metadata.labels = Some([(VLAN_LABEL.to_string(), "v".to_string())].into());
+    assert!(!ExistingNad::from_object(&o).is_ours(), "no managed-by label");
+    let rendered = nad("v", "a", &vlan("v", 10, &["a"]).spec);
+    assert!(ExistingNad::from_object(&rendered.obj).is_ours(), "what nad() renders is ours");
+}
+
 #[test]
 fn a_drifted_nad_is_put_back() {
     let mut w = world(vec![vlan("v", 10, &["a"])], &["a"]);
-    w.nads = vec![ExistingNad { namespace: "a".into(), name: "v".into(), vlan: Some("v".into()), config: Some("{}".into()) }];
+    w.nads = vec![ExistingNad { namespace: "a".into(), name: "v".into(), vlan: Some("v".into()), managed: true, config: Some("{}".into()) }];
     assert_eq!(applied(&plan(&w)), vec!["NetworkAttachmentDefinition/a/v"]);
 }
 
 #[test]
 fn a_nad_that_is_not_ours_is_never_overwritten() {
     let mut w = world(vec![vlan("v", 10, &["a"])], &["a"]);
-    w.nads = vec![ExistingNad { namespace: "a".into(), name: "v".into(), vlan: None, config: Some("{}".into()) }];
+    w.nads = vec![ExistingNad { namespace: "a".into(), name: "v".into(), vlan: None, managed: false, config: Some("{}".into()) }];
     let p = plan(&w);
     assert!(p.apply.is_empty() && p.delete.is_empty());
     assert!(p.reports["v"].problems[0].contains("not overwriting"));
@@ -168,6 +205,30 @@ fn a_missing_namespace_gets_its_nad_when_it_appears() {
     let p = plan(&world(vec![vlan("v", 10, &["a", "later"])], &["a"]));
     assert_eq!(applied(&p), vec!["NetworkAttachmentDefinition/a/v"]);
     assert_eq!(p.reports["v"].missing_namespaces, vec!["later"]);
+}
+
+// Finding 9eb5fa65fc34: a missing allowed namespace keeps the VLAN not Ready.
+#[test]
+fn a_missing_namespace_keeps_the_vlan_waiting() {
+    let mut w = world(vec![vlan("v", 10, &["a", "later"])], &["a"]);
+    w.nodes.insert(
+        "n1".into(),
+        Some(NodeState { bridge: DEFAULT_BRIDGE.into(), vlan_filtering: true, present: vec![10], ..Default::default() }),
+    );
+    let p = plan(&w);
+    let r = &p.reports["v"];
+    assert_eq!(r.nodes, vec!["n1"]);
+    assert_eq!(r.waiting, vec!["namespace(s) later do not exist yet"]);
+    let now = Time(chrono::DateTime::from_timestamp(1000, 0).unwrap());
+    let s = status(&VlanStatus::default(), r, 1, &now);
+    assert_eq!((s.conditions[0].status.as_str(), s.conditions[0].reason.as_str()), ("False", "Waiting"));
+    assert_eq!(s.conditions[1].status, "False", "waiting is not degraded");
+
+    // Once it exists, the VLAN is Ready.
+    w.namespaces.insert("later".into(), None);
+    let p = plan(&w);
+    assert!(p.reports["v"].waiting.is_empty());
+    assert_eq!(status(&VlanStatus::default(), &p.reports["v"], 1, &now).conditions[0].status, "True");
 }
 
 #[test]
@@ -210,22 +271,48 @@ fn status_reports_nodes_pending_nodes_and_pods() {
 
     let r10 = &p.reports["v10"];
     assert_eq!(r10.nodes, vec!["n1", "n2"]);
-    assert!(r10.pending_nodes.is_empty() && r10.waiting.is_empty());
+    assert_eq!(r10.pending_nodes, vec!["n3: no readable report from its node agent"]);
     assert_eq!(r10.pods, vec!["a/p1", "a/p2"], "b/v10 is not one of its NADs");
 
     let r20 = &p.reports["v20"];
     assert_eq!(r20.nodes, vec!["n1"]);
-    assert_eq!(r20.pending_nodes, vec!["n2: no uplink port on bridge stormbr0"]);
+    assert_eq!(
+        r20.pending_nodes,
+        vec!["n2: no uplink port on bridge stormbr0", "n3: no readable report from its node agent"]
+    );
     assert_eq!(r20.pod_count, 1);
 
     let now = Time(chrono::DateTime::from_timestamp(1000, 0).unwrap());
     let s10 = status(&VlanStatus::default(), r10, 3, &now);
     assert_eq!(s10.conditions[0].type_, "Ready");
-    assert_eq!(s10.conditions[0].status, "True");
+    assert_eq!((s10.conditions[0].status.as_str(), s10.conditions[0].reason.as_str()), ("False", "Waiting"));
     assert_eq!(s10.node_count, 2);
     let s20 = status(&VlanStatus::default(), r20, 3, &now);
     assert_eq!((s20.conditions[0].status.as_str(), s20.conditions[0].reason.as_str()), ("False", "Waiting"));
     assert_eq!(s20.conditions[1].status, "False", "waiting is not degraded");
+}
+
+// Finding e7e9492310d5: a node with no agent report is pending, so one
+// reporting node does not make the VLAN Ready while another is silent.
+#[test]
+fn a_node_without_an_agent_report_keeps_the_vlan_waiting() {
+    let mut w = world(vec![vlan("v", 10, &["a"])], &["a"]);
+    let carries =
+        Some(NodeState { bridge: DEFAULT_BRIDGE.into(), vlan_filtering: true, present: vec![10], ..Default::default() });
+    w.nodes.insert("n1".into(), carries.clone());
+    w.nodes.insert("n2".into(), None);
+    let now = Time(chrono::DateTime::from_timestamp(1000, 0).unwrap());
+    let r = &plan(&w).reports["v"];
+    assert_eq!(r.nodes, vec!["n1"]);
+    assert_eq!(r.pending_nodes, vec!["n2: no readable report from its node agent"]);
+    assert_eq!(r.waiting, vec!["1 node(s) do not carry it yet"]);
+    assert_eq!(status(&VlanStatus::default(), r, 1, &now).conditions[0].status, "False");
+
+    // The agent reports there too: Ready.
+    w.nodes.insert("n2".into(), carries);
+    let r = &plan(&w).reports["v"];
+    assert!(r.pending_nodes.is_empty() && r.waiting.is_empty());
+    assert_eq!(status(&VlanStatus::default(), r, 1, &now).conditions[0].status, "True");
 }
 
 #[test]

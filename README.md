@@ -398,10 +398,18 @@ or a cluster-wide IPAM plugin (split out as #41).
 
 **Status** (`kubectl get vl`): `nads` (`namespace/name`), `missingNamespaces`,
 `nodes` (whose agent reports the VLAN on every uplink), `pendingNodes` (with
-why), `nodeCount`, `pods` (from each pod's `k8s.v1.cni.cncf.io/network-status`;
-at most 50 listed) and `podCount`, and conditions `Ready` (valid, NADs in
-place, every node with an agent carries it) and `Degraded` (invalid spec or
-a conflict).
+why — including a node with no readable agent report), `nodeCount`, `pods`
+(from each pod's `k8s.v1.cni.cncf.io/network-status`; at most 50 listed) and
+`podCount`, and conditions `Ready` (valid, every allowed namespace exists and
+has its NAD, and **every node** reports the VLAN: the agent DaemonSet runs on
+all nodes, so a silent node is pending, not skipped; there is no per-node
+opt-out) and `Degraded` (invalid spec or a conflict).
+
+**Which NADs are its:** a NAD named for the VLAN its `network.storm.io/vlan`
+label names *and* labelled `app.kubernetes.io/managed-by: network-operator`.
+Only those are updated or deleted; any other NAD — a renamed copy, or a
+same-named one without both labels — is left alone (a same-named one makes the
+VLAN `Degraded`).
 
 **What it needs from the rest of the stack:** a Multus-capable kubelet
 (rustkube-node runs NADs, #233 there) and the CNI `bridge`/`static`/`dhcp`

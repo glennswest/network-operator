@@ -129,7 +129,8 @@ pub struct VlanStatus {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub nodes: Vec<String>,
 
-    /// Nodes with an agent that does not (yet) have it, with the reason.
+    /// Nodes that do not (yet) have it, with the reason: their agent has not
+    /// placed it, or the node has no readable agent report.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pending_nodes: Vec<String>,
 
@@ -150,8 +151,8 @@ pub struct VlanStatus {
 
 /// Condition types on a VLAN.
 pub mod conditions {
-    /// The spec is valid, its NADs are in place and every node with an agent
-    /// carries the VLAN.
+    /// The spec is valid, every allowed namespace exists and has its NAD,
+    /// and every node's agent reports the VLAN.
     pub const READY: &str = "Ready";
     /// Something is wrong that the operator cannot fix by retrying: an
     /// invalid spec, a conflict, a NAD it may not overwrite.
