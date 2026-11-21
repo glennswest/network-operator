@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-11-20
+- **fix:** a key the render drops from a ConfigMap is now removed from the stored one (#47, finding `32389d356451`). rustkube's apply is a plain merge, so setting `mtu` back to auto, or enabling standalone Envoy (which drops `proxy-prometheus-port`), left the old key in `cilium-config` and in force. After applying a ConfigMap, `apply.rs` reads it back and, if `data`/`binaryData` differ from the render, replaces it with exactly the rendered maps (keeping its metadata and `resourceVersion`, retrying a 409 up to 5 times). Unit tests in `apply.rs` cover both cases.
 - **fix:** only the `Network` named `cluster` is reconciled (#46, finding `067b10625fd1`). Every `Network` CR used to render, apply and own the same fixed `kube-system` Cilium objects, so a second one fought the first on every requeue and deleting either garbage-collected the shared install. Any other `Network` now gets `Degraded=True` / `Available=False` / `Progressing=False` with reason `NotTheClusterNetwork` and nothing else; its status is rewritten only when it changes.
 
 ### 2026-11-18

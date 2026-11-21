@@ -9,6 +9,13 @@
 //! * It implements `application/apply-patch+yaml` as a plain merge with no
 //!   field-ownership tracking. Our fields are still restored; fields *added* by
 //!   someone else survive rather than being pruned. Drift-heal, not drift-purge.
+//!   That merge is wrong for a ConfigMap, whose `data` is a map we own whole:
+//!   a key a later render drops (`mtu` back to auto, `proxy-prometheus-port`
+//!   once standalone Envoy takes the port) would survive the merge. So after
+//!   applying a ConfigMap we read it back and, if its `data`/`binaryData` is
+//!   not exactly the rendered map, replace it with that map (carrying the
+//!   resourceVersion, retrying conflicts) — see [`exact_data`]. On an
+//!   apiserver with real SSA the read finds nothing to do.
 //! * Older builds reject PATCH outright, so a 405/501 falls back to
 //!   create-then-replace.
 
@@ -38,6 +45,14 @@ pub enum ApplyError {
 /// `kubectl apply`, or an older field manager) cannot pin a field against us.
 pub async fn apply_one(client: &Client, r: &Rendered) -> Result<(), ApplyError> {
     let api = api_for(client, r);
+    apply_merge(&api, r).await?;
+    if is_configmap(r) {
+        enforce_exact_data(&api, r).await?;
+    }
+    Ok(())
+}
+
+async fn apply_merge(api: &Api<DynamicObject>, r: &Rendered) -> Result<(), ApplyError> {
     let name = r.name();
     let params = PatchParams::apply(FIELD_MANAGER).force();
 
@@ -54,7 +69,7 @@ pub async fn apply_one(client: &Client, r: &Rendered) -> Result<(), ApplyError> 
                     object = %r.id(),
                     "apply did not create the missing object (server-side apply must upsert); creating it directly"
                 );
-                match replace(&api, r).await {
+                match replace(api, r).await {
                     // Still absent after an explicit create: it was the kind
                     // that was missing all along, not the object. Hand it back
                     // to the deferral path so Cilium's own CRs still wait for
@@ -68,13 +83,82 @@ pub async fn apply_one(client: &Client, r: &Rendered) -> Result<(), ApplyError> 
 
             Disposition::NoPatchSupport => {
                 warn!(object = %r.id(), "apiserver rejected PATCH; falling back to create/replace");
-                replace(&api, r).await
+                replace(api, r).await
             }
 
             Disposition::Fail => Err(ApplyError::Api { id: r.id(), source: KubeError::Api(e) }),
         },
         Err(source) => Err(ApplyError::Api { id: r.id(), source }),
     }
+}
+
+/// How many times a ConfigMap's exact-data replace is retried on a 409
+/// (someone wrote it between our read and our replace).
+const EXACT_DATA_ATTEMPTS: usize = 5;
+
+fn is_configmap(r: &Rendered) -> bool {
+    r.api.group.is_empty() && r.api.kind == "ConfigMap"
+}
+
+/// Make the stored ConfigMap's data exactly the rendered data (finding
+/// 32389d356451): read, and if it differs, replace with the resourceVersion
+/// just read; a conflict means it moved under us, so read again.
+async fn enforce_exact_data(api: &Api<DynamicObject>, r: &Rendered) -> Result<(), ApplyError> {
+    let name = r.name();
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+        let current = api
+            .get(name)
+            .await
+            .map_err(|source| ApplyError::Api { id: r.id(), source })?;
+        let Some(next) = exact_data(&current, &r.obj) else {
+            return Ok(());
+        };
+        match api.replace(name, &PostParams::default(), &next).await {
+            Ok(_) => {
+                debug!(object = %r.id(), "pruned ConfigMap keys the render no longer has");
+                return Ok(());
+            }
+            Err(KubeError::Api(e)) if e.code == 409 && attempt < EXACT_DATA_ATTEMPTS => {
+                debug!(object = %r.id(), attempt, "conflict replacing ConfigMap data; re-reading");
+            }
+            Err(source) => return Err(ApplyError::Api { id: r.id(), source }),
+        }
+    }
+}
+
+/// The ConfigMap fields whose contents are ours whole.
+const DATA_FIELDS: [&str; 2] = ["data", "binaryData"];
+
+/// If `current`'s data maps differ from `rendered`'s, the object to replace it
+/// with: `current` (its metadata and resourceVersion) carrying exactly the
+/// rendered `data` and `binaryData`, an absent one removed. `None` when they
+/// already match. Pure, so the pruning rule is unit-tested.
+pub fn exact_data(current: &DynamicObject, rendered: &DynamicObject) -> Option<DynamicObject> {
+    let empty = serde_json::Map::new();
+    let map_of = |o: &DynamicObject, f: &str| {
+        o.data.get(f).and_then(|v| v.as_object()).cloned().unwrap_or_else(|| empty.clone())
+    };
+    if DATA_FIELDS.iter().all(|f| map_of(current, f) == map_of(rendered, f)) {
+        return None;
+    }
+    let mut next = current.clone();
+    if !next.data.is_object() {
+        next.data = serde_json::Value::Object(serde_json::Map::new());
+    }
+    let body = next.data.as_object_mut().expect("made an object above");
+    for f in DATA_FIELDS {
+        match rendered.data.get(f) {
+            Some(v) if v.as_object().is_some_and(|m| !m.is_empty()) => {
+                body.insert(f.to_string(), v.clone());
+            }
+            _ => {
+                body.remove(f);
+            }
+        }
+    }
+    Some(next)
 }
 
 /// What to do about an error from an apply. Split out from [`apply_one`] so the
@@ -243,6 +327,70 @@ mod tests {
         ] {
             assert_eq!(classify(&err(code, msg)), Disposition::Fail, "{code} must fail");
         }
+    }
+
+    fn cm(data: serde_json::Value, rv: &str) -> DynamicObject {
+        let mut o: DynamicObject = serde_json::from_value(serde_json::json!({
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {"name": "cilium-config", "namespace": "kube-system",
+                         "resourceVersion": rv, "labels": {"someone": "else"}},
+        }))
+        .unwrap();
+        o.data = data;
+        o
+    }
+
+    #[test]
+    fn a_key_the_render_dropped_is_pruned() {
+        // `mtu` back to auto: the render omits it; the merge kept it.
+        let stored = cm(serde_json::json!({"data": {"mtu": "1400", "debug": "false"}}), "7");
+        let rendered = cm(serde_json::json!({"data": {"debug": "false"}}), "");
+        let next = exact_data(&stored, &rendered).expect("must replace");
+        assert_eq!(next.data["data"], serde_json::json!({"debug": "false"}));
+        // The replace carries the resourceVersion read, and keeps metadata.
+        assert_eq!(next.metadata.resource_version.as_deref(), Some("7"));
+        assert_eq!(next.metadata.labels.unwrap()["someone"], "else");
+    }
+
+    #[test]
+    fn standalone_envoy_drops_the_proxy_prometheus_port() {
+        let stored = cm(
+            serde_json::json!({"data": {"proxy-prometheus-port": "9964", "external-envoy-proxy": "false"}}),
+            "3",
+        );
+        let rendered = cm(serde_json::json!({"data": {"external-envoy-proxy": "true"}}), "");
+        let next = exact_data(&stored, &rendered).unwrap();
+        assert_eq!(next.data["data"], serde_json::json!({"external-envoy-proxy": "true"}));
+    }
+
+    #[test]
+    fn matching_data_needs_no_replace() {
+        let stored = cm(serde_json::json!({"data": {"a": "1"}}), "9");
+        assert!(exact_data(&stored, &cm(serde_json::json!({"data": {"a": "1"}}), "")).is_none());
+        // Absent and empty are the same map.
+        assert!(exact_data(&cm(serde_json::json!({}), "1"), &cm(serde_json::json!({"data": {}}), "")).is_none());
+    }
+
+    #[test]
+    fn binary_data_we_never_rendered_is_removed() {
+        let stored = cm(serde_json::json!({"data": {"a": "1"}, "binaryData": {"x": "AA=="}}), "2");
+        let next = exact_data(&stored, &cm(serde_json::json!({"data": {"a": "1"}}), "")).unwrap();
+        assert!(next.data.get("binaryData").is_none());
+        assert_eq!(next.data["data"], serde_json::json!({"a": "1"}));
+    }
+
+    #[test]
+    fn only_core_configmaps_get_the_exact_data_pass() {
+        use kube::core::{ApiResource, GroupVersionKind};
+        let r = |g: &str, k: &str| Rendered {
+            api: ApiResource::from_gvk(&GroupVersionKind::gvk(g, "v1", k)),
+            namespace: None,
+            obj: cm(serde_json::json!({}), ""),
+        };
+        assert!(is_configmap(&r("", "ConfigMap")));
+        assert!(!is_configmap(&r("", "Secret")));
+        assert!(!is_configmap(&r("apps", "DaemonSet")));
     }
 
     #[test]

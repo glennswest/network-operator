@@ -311,7 +311,13 @@ now closed, and the fallbacks stay for older apiservers:
   PUT (re-reading the spec first).
 - rustkube's apply-patch is a plain merge with no field ownership, so our
   fields are restored on drift but fields someone else *added* survive:
-  drift-heal, not drift-purge.
+  drift-heal, not drift-purge. The exception is a ConfigMap's `data` /
+  `binaryData` (#47): after applying one (`cilium-config`,
+  `cilium-envoy-config`, `hubble-relay-config`) the operator reads it back and,
+  if its keys differ from the render, replaces it with exactly the rendered map
+  (current `resourceVersion`, up to 5 tries on a 409). Without it a key the
+  render drops — `mtu` back to auto, `proxy-prometheus-port` once standalone
+  Envoy takes 9964 — would survive the merge and stay in force.
 
 ## The VLAN layer (`VLAN` CR, #32)
 
