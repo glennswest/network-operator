@@ -195,6 +195,14 @@ mod tests {
         r.obj.data["spec"].clone()
     }
 
+    /// The rendered object of `kind`. (A helper, not `r.api.kind == "…"`
+    /// inline: gitleaks' generic-api-key rule reads that as a key, #55.)
+    fn by_kind<'a>(objs: &'a [Rendered], kind: &str) -> &'a Rendered {
+        objs.iter()
+            .find(|r| r.api.kind == kind)
+            .unwrap_or_else(|| panic!("no {kind} rendered"))
+    }
+
     #[test]
     fn nothing_is_rendered_without_lb_ipam() {
         assert!(render(&cfg_for(Mode::Overlay)).is_empty());
@@ -207,8 +215,7 @@ mod tests {
         let mut cfg = cfg_for(Mode::BareMetal);
         cfg.lb_pools = vec!["192.168.8.240/28".into(), "10.0.0.0/24".into()];
         let objs = render(&cfg);
-        let pool = &objs[0];
-        assert_eq!(pool.api.kind, "CiliumLoadBalancerIPPool");
+        let pool = by_kind(&objs, "CiliumLoadBalancerIPPool");
         assert_eq!(
             spec_of(pool)["blocks"],
             serde_json::json!([{ "cidr": "192.168.8.240/28" }, { "cidr": "10.0.0.0/24" }])
@@ -220,7 +227,7 @@ mod tests {
         let mut cfg = cfg_for(Mode::Bgp);
         cfg.bgp_peers = vec![("192.168.8.1".into(), 64512), ("192.168.8.2".into(), 64513)];
         let objs = render(&cfg);
-        let cluster = objs.iter().find(|r| r.api.kind == "CiliumBGPClusterConfig").unwrap();
+        let cluster = by_kind(&objs, "CiliumBGPClusterConfig");
         let instances = spec_of(cluster)["bgpInstances"].clone();
         assert_eq!(instances[0]["localASN"], 64512);
 
@@ -237,7 +244,7 @@ mod tests {
     fn bgp_families_follow_what_there_is_to_advertise() {
         let afis = |cfg: &EffectiveConfig| -> Vec<String> {
             let objs = render(cfg);
-            let peer_cfg = objs.iter().find(|r| r.api.kind == "CiliumBGPPeerConfig").unwrap();
+            let peer_cfg = by_kind(&objs, "CiliumBGPPeerConfig");
             spec_of(peer_cfg)["families"]
                 .as_array()
                 .unwrap()
@@ -263,10 +270,10 @@ mod tests {
     #[test]
     fn peer_config_and_advertisement_are_linked_by_label() {
         let objs = render(&cfg_for(Mode::Bgp));
-        let peer_cfg = objs.iter().find(|r| r.api.kind == "CiliumBGPPeerConfig").unwrap();
+        let peer_cfg = by_kind(&objs, "CiliumBGPPeerConfig");
         let selector = spec_of(peer_cfg)["families"][0]["advertisements"]["matchLabels"].clone();
 
-        let adv = objs.iter().find(|r| r.api.kind == "CiliumBGPAdvertisement").unwrap();
+        let adv = by_kind(&objs, "CiliumBGPAdvertisement");
         let labels = adv.obj.metadata.labels.as_ref().unwrap();
         assert_eq!(
             selector[ADVERTISE_LABEL.0],
@@ -274,7 +281,7 @@ mod tests {
         );
 
         // Every peer points at the peer config we actually rendered.
-        let cluster = objs.iter().find(|r| r.api.kind == "CiliumBGPClusterConfig").unwrap();
+        let cluster = by_kind(&objs, "CiliumBGPClusterConfig");
         let peers = spec_of(cluster)["bgpInstances"][0]["peers"].clone();
         assert_eq!(peers[0]["peerConfigRef"]["name"], peer_cfg.name());
     }
@@ -282,7 +289,7 @@ mod tests {
     #[test]
     fn bgp_advertises_both_pod_cidrs_and_lb_vips() {
         let objs = render(&cfg_for(Mode::Bgp));
-        let adv = objs.iter().find(|r| r.api.kind == "CiliumBGPAdvertisement").unwrap();
+        let adv = by_kind(&objs, "CiliumBGPAdvertisement");
         let kinds: Vec<_> = spec_of(adv)["advertisements"]
             .as_array()
             .unwrap()
@@ -309,10 +316,8 @@ mod tests {
     fn l2_policy_stays_on_the_alpha_group_even_on_new_cilium() {
         let cfg = cfg_for(Mode::BareMetal);
         assert_eq!(api_version(&cfg), "v2");
-        let policy = render(&cfg)
-            .into_iter()
-            .find(|r| r.api.kind == "CiliumL2AnnouncementPolicy")
-            .unwrap();
+        let objs = render(&cfg);
+        let policy = by_kind(&objs, "CiliumL2AnnouncementPolicy");
         assert_eq!(policy.api.version, "v2alpha1");
     }
 }

@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-23 (#55)
+- **test:** the secret scan's one finding (`generic-api-key`, `src/render/lb.rs:314` at 710d328) was a false positive: the Kubernetes kind `"CiliumL2AnnouncementPolicy"` compared inline against `r.api.kind`. The `lb.rs` tests now look objects up with a `by_kind` helper, so no `api… == "<long string>"` line is left; no allowlist entry is needed. No change outside tests.
+
 ### 2026-11-21 (#51)
 - **fix:** a namespace default that did not land no longer reads as Ready (#51, finding `9a9978e141ed`). The VLAN controller logged a failed `network.storm.io/default-networks` patch and still marked the `defaultFor` VLAN Ready. Now the result is checked against the annotation the apiserver returns: on an error, or if the namespace does not carry the wanted value, the VLAN it should name (and the one it still names, if that exists) gets a `Waiting` reason and stays `Ready=False` until a later pass writes it.
 
