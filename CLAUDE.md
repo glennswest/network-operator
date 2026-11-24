@@ -348,6 +348,8 @@ until `deploy/crds/` matches).
       non-stormcos rustkube cluster. Needs-owner, re-posted on #16: close on
       plumbing + split the operator checks (rec.), a non-stormcos target, or
       a one-off cluster. Stopped there; no code change.
+      2026-11-24: no reply yet; `needs-owner` label added so it shows in
+      the Decisions queue. Still stopped; no code change.
 - Open: #8 (drift-heal test + must-gather; collector filed as
   stormcos_qa#22; 2026-10-06 nothing left here — proposed after
   decision #19, which picks where drift-heal runs) — P3. #9 also carries the envoy tag mismatch
