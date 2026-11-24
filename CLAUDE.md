@@ -305,10 +305,12 @@ until `deploy/crds/` matches).
       `a_failed_namespace_default_write_keeps_the_vlan_waiting`.
       ad5a57a; sc-build rc=0 there: 202 unit + 3+6+3, test/ 36, clippy
       both. Not run on a cluster (#30/#16).
-- [ ] #55 (2026-11-23, P1 secret scan at 710d328) `generic-api-key` at
+- [x] #55 (2026-11-23, P1 secret scan at 710d328) `generic-api-key` at
       `src/render/lb.rs:314`: false positive (a Cilium kind name compared to
       `r.api.kind`). Fix: `by_kind` test helper for all 8 lookups in lb.rs
-      tests, no allowlist. Close after sc-build passes.
+      tests, no allowlist. cb4952d; sc-build there: build, 202 unit +
+      3+6+3, clippy clean. (An extra whole-crate `cargo fmt --check` failed
+      on pre-existing drift, none in lb.rs; auto-filed #56 closed.)
 - [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
