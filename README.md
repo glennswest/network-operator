@@ -244,7 +244,7 @@ the Secret `kube-system/cilium-ipsec-keys` read-only into the agent at
   generate a fresh one at SPI 3; agents still holding a different SPI-3 key
   disagree until they all load it — rotate instead.
 
-Not yet seen on a cluster: no test machine runs the operator (#30, #16), so
+Not yet seen on a cluster: no test machine runs the operator (#30, #57), so
 the Secret volume on rustkube-node and the agent's IPsec datapath are
 checked by unit and golden tests only.
 

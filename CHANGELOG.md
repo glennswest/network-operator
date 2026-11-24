@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-24 (#16)
+- **test:** #16 closed on the verified plumbing (master's decision): the `test/` image builds, is pushed, runs as a Job, and short exits 0 with five standard skips on stormcos machines (pvetest1 cc9b077f0d, pvetest2 b12b5e1664, at 3c4c2ff). The run against a live operator, and the operator-level checks deferred to it (#9, #12–#15, #19, #44, #45, #47, #48), moved to #57, which waits for a non-stormcos rustkube cluster (#30). No code change.
+
 ### 2026-11-23 (#55)
 - **test:** the secret scan's one finding (`generic-api-key`, `src/render/lb.rs:314` at 710d328) was a false positive: the Kubernetes kind `"CiliumL2AnnouncementPolicy"` compared inline against `r.api.kind`. The `lb.rs` tests now look objects up with a `by_kind` helper, so no `api… == "<long string>"` line is left; no allowlist entry is needed. No change outside tests.
 

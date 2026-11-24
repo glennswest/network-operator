@@ -311,7 +311,7 @@ until `deploy/crds/` matches).
       tests, no allowlist. cb4952d; sc-build there: build, 202 unit +
       3+6+3, clippy clean. (An extra whole-crate `cargo fmt --check` failed
       on pre-existing drift, none in lb.rs; auto-filed #56 closed.)
-- [ ] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
+- [x] #16 test containers — CODE DONE (`test/`, see test/README.md), awaiting
       the first on-cluster run. Verified so far: 25 suite unit tests +
       clippy under sc-build; image built and smoke-run with podman on dev;
       stormcentral's runner built it (test/build.sh + podman build) and pushed
@@ -348,8 +348,12 @@ until `deploy/crds/` matches).
       non-stormcos rustkube cluster. Needs-owner, re-posted on #16: close on
       plumbing + split the operator checks (rec.), a non-stormcos target, or
       a one-off cluster. Stopped there; no code change.
-      2026-11-24: no reply yet; `needs-owner` label added so it shows in
-      the Decisions queue. Still stopped; no code change.
+      2026-11-24 CLOSED (master's decision, option 1; not an owner call, so
+      `needs-owner` removed): closed on the verified plumbing. The live
+      short/medium/long run and the operator-level checks (#9, #12-#15,
+      #19, #44, #45, #47, #48) moved to #57 (P3), which waits for a
+      non-stormcos rustkube cluster (+ stormcentral#55/#501,
+      rustkube-node#351).
 - Open: #8 (drift-heal test + must-gather; collector filed as
   stormcos_qa#22; 2026-10-06 nothing left here — proposed after
   decision #19, which picks where drift-heal runs) — P3. #9 also carries the envoy tag mismatch
@@ -366,8 +370,8 @@ until `deploy/crds/` matches).
   (all open issues still real, priorities confirmed); comment mining filed
   stormcos_qa#22 and added the envoy pin to #9; docs re-verified against the
   code (second pass: test/README env table). Second validation pass
-  2026-09-28: unchanged; #16 status posted. Next: run `stormcentral test run
-  network-operator short` (registry is back), then medium, for #16.
+  2026-09-28: unchanged; #16 status posted. (Superseded: #16 closed
+  2026-11-24; the live run is #57, waiting on a non-stormcos cluster.)
 - Owner decisions pending: #18 (a golden, or stay a preloaded container) P2;
   #19 (where drift-heal is tested — test Jobs may not touch kube-system) P3;
   2026-10-06 narrowed to option 1 (opt-in disruptive kube-system test in the
@@ -391,5 +395,5 @@ carried with `start = false` (#27; first image f22c3c982493, carried by
 stormcos since 82cb0f9 for the VLAN option); the OCI
 archive on GitHub releases stops at v0.2.4. Docs refreshed from the code
 2026-11-14. The `test/` container's plumbing passes on pvetest1/2 (5 skips,
-#16); no operator run on a cluster yet. Open doc-vs-code gaps are issues:
+#16, closed); no operator run on a cluster yet (#57). Open doc-vs-code gaps are issues:
 #41 (VLAN address pool), #40 (deck overflow), #31, #28, #29, #34.
