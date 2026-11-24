@@ -200,6 +200,9 @@ until `deploy/crds/` matches).
       the isolation probe needs), stormcos-options#23 (how deploy/vlan.yaml
       reaches a test machine), stormcos#913 (dhcp only). No code change;
       closes on a passing `vlan` run.
+      2026-11-24: same six still open, no activity (checked with gh). Asked
+      the owner: keep #32 open for the live run, or close on the code (as
+      #16 was) and move the live `vlan` run to #57. Stopped there.
 - [x] #27 golden (decided #18). Shape, from stormcos's optional-operator
       precedent (stormcos docs/OPTIONS.md; nfsop, stormblock-operator):
       registry kind `service`, `start = false` (carried, never booted; #30),
